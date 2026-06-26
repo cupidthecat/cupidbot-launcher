@@ -558,8 +558,7 @@ async function initializeLauncher() {
 
     const cupidbotLauncherVersion = await window.electron.launcherVersion();
 
-    document.querySelector('.titlebar-title').innerText =
-        'CupidBot Launcher - ' + cupidbotLauncherVersion;
+    document.title = 'CupidBot Launcher - ' + cupidbotLauncherVersion;
 
     if (properties['client'] === '0.0.0' && clientVersion !== '0.0.0') {
         document.getElementById('loader-container').style.display = 'block';
@@ -1434,16 +1433,16 @@ async function updateVersionPreference(event) {
     await window.electron.writeProperties(properties);
 }
 
-async function titlebarButtons() {
-    document.getElementById('minimize-btn').addEventListener('click', () => {
+async function nativeWindowControlFallbacks() {
+    document.getElementById('minimize-btn')?.addEventListener('click', () => {
         window.electron.minimizeWindow();
     });
 
-    document.getElementById('maximize-btn').addEventListener('click', () => {
+    document.getElementById('maximize-btn')?.addEventListener('click', () => {
         window.electron.maximizeWindow();
     });
 
-    document.getElementById('close-btn').addEventListener('click', () => {
+    document.getElementById('close-btn')?.addEventListener('click', () => {
         window.electron.closeLauncher();
     });
 }
@@ -1527,7 +1526,7 @@ async function restoreSelectedAccountIfAny() {
 async function initUI(properties) {
     updateNowBtn();
     reminderMeLaterBtn();
-    titlebarButtons();
+    nativeWindowControlFallbacks();
     setupHamburgerMenu();
 
     // Setup play button for non-Jagex accounts
@@ -1582,6 +1581,9 @@ function setupHamburgerMenu() {
     };
 
     const showMenu = () => {
+        const rect = menuBtn.getBoundingClientRect();
+        menu.style.left = `${Math.round(rect.left)}px`;
+        menu.style.top = `${Math.round(rect.bottom + 6)}px`;
         menu.classList.remove('hidden');
         menu.setAttribute('aria-hidden', 'false');
     };

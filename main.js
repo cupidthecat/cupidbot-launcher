@@ -80,7 +80,7 @@ async function createWindow() {
         height: process.env.DEBUG !== 'true' ? 750 : 800,
         show: false, // Don't show the main window immediately
         title: 'CupidBot Launcher',
-        autoHideMenuBar: process.env.DEBUG !== 'true',
+        autoHideMenuBar: true,
         icon: path.join(__dirname, 'images/cupidbot_transparent.ico'),
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
@@ -88,13 +88,8 @@ async function createWindow() {
             contextIsolation: true,
             webviewTag: true
         },
-        titleBarStyle: process.env.DEBUG !== 'true' ? 'hidden' : '',
-        frame: process.env.DEBUG === 'true'
+        frame: true
     });
-
-    if (process.platform === 'darwin') {
-        mainWindow.setWindowButtonVisibility(false);
-    }
 
     try {
         const extraHandlers = require(path.join(
