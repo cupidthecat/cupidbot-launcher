@@ -40,6 +40,7 @@ module.exports = async function (deps) {
         };
     }
 
+    const JVM_NATIVE_ACCESS_ARGS = ['--enable-native-access=ALL-UNNAMED'];
     const LOCAL_CLIENT_FLAGS = ['-disable-telemetry'];
 
     ipcMain.handle(
@@ -53,6 +54,7 @@ module.exports = async function (deps) {
                 );
                 const commandArgs = [
                     ...memoryConfig.args,
+                    ...JVM_NATIVE_ACCESS_ARGS,
                     '-jar',
                     jarPath,
                     ...LOCAL_CLIENT_FLAGS
@@ -97,6 +99,7 @@ module.exports = async function (deps) {
             );
             const commandArgs = [
                 ...memoryConfig.args,
+                ...JVM_NATIVE_ACCESS_ARGS,
                 '-jar',
                 jarPath,
                 ...LOCAL_CLIENT_FLAGS,

@@ -108,6 +108,10 @@ describe('CupidBot client IPC', () => {
             expect.arrayContaining(['-jar', path.join(tempDir, 'cupidbot-1.2.3.jar'), '-disable-telemetry']),
             expect.objectContaining({ detached: true })
         );
+        expect(spawn.mock.calls[1][1]).toContain('--enable-native-access=ALL-UNNAMED');
+        expect(spawn.mock.calls[1][1].indexOf('--enable-native-access=ALL-UNNAMED')).toBeLessThan(
+            spawn.mock.calls[1][1].indexOf('-jar')
+        );
         expect(spawn.mock.calls[0][1]).not.toContain('-noupdate');
     });
 });
