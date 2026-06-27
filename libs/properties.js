@@ -32,7 +32,7 @@ module.exports = async function (deps) {
         try {
             try {
                 if (fs.existsSync(filePath)) {
-                    const data = fs.readFileSync(filePath, 'utf8');
+                    const data = fs.readFileSync(filePath, 'utf8').replace(/^\uFEFF/, '');
                     return JSON.parse(data);
                 }
                 fs.writeFileSync(
