@@ -37,7 +37,7 @@ To install a specific jar path while keeping the configured CupidBot version:
 
 ```bash
 cd ../cupidbot
-scripts/install-cupidbot-launcher-jar.sh runelite-client/build/libs/cupidbot-2.6.10.jar
+scripts/install-cupidbot-launcher-jar.sh runelite-client/build/libs/cupidbot-2.6.11.jar
 ```
 
 ## Offline Tips
