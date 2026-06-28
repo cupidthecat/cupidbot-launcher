@@ -37,7 +37,7 @@ describe('properties IPC', () => {
     test('read-properties accepts UTF-8 BOM-prefixed JSON', async () => {
         fs.writeFileSync(
             path.join(tempDir, 'resource_versions.json'),
-            '\uFEFF' + JSON.stringify({ client: '2.6.11', version_pref: '2.6.11' }),
+            '\uFEFF' + JSON.stringify({ client: '2.6.12', version_pref: '2.6.12' }),
             'utf8'
         );
         const { deps, handlers } = createDeps(tempDir);
@@ -46,8 +46,8 @@ describe('properties IPC', () => {
         const result = await handlers['read-properties']();
 
         expect(result).toEqual({
-            client: '2.6.11',
-            version_pref: '2.6.11'
+            client: '2.6.12',
+            version_pref: '2.6.12'
         });
     });
 });
