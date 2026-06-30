@@ -94,11 +94,79 @@
         <!-- Main Content -->
         <div class="main-content">
             <div class="content">
-                <div class="recent-updates">
-                    <!-- Using webview instead of iframe for greater control over injected CSS/JS -->
-                    <webview id="website" src="" allowpopups="" disablewebsecurity=""></webview>
-                    <div id="embed-overlay"></div>
-                </div>
+                <main class="launcher-home" aria-labelledby="launcher-home-title">
+                    <section class="launcher-home-intro">
+                        <p class="launcher-kicker">Local CupidBot Launcher</p>
+                        <h1 id="launcher-home-title">CupidBot Launcher</h1>
+                        <p>
+                            Launch local CupidBot clients, pick account profiles, manage Jagex accounts, and keep
+                            plugins in the local RuneLite plugin folder.
+                        </p>
+                    </section>
+
+                    <section class="recent-updates-panel" aria-labelledby="recent-updates-title">
+                        <div class="section-heading-row">
+                            <h2 id="recent-updates-title">Recent Updates</h2>
+                            <span class="status-pill">Local</span>
+                        </div>
+                        <ul class="updates-list">
+                            <li>
+                                <strong>Launcher</strong>
+                                <span id="launcher-version-status">Checking launcher version...</span>
+                            </li>
+                            <li>
+                                <strong>CupidBot Client</strong>
+                                <span id="client-version-status">Checking client version...</span>
+                            </li>
+                            <li>
+                                <strong>Installed Jars</strong>
+                                <span id="installed-client-status">Checking local jars...</span>
+                            </li>
+                            <li>
+                                <strong>Plugins</strong>
+                                <span>Hub plugins load from ~/.runelite/cupidbot-plugins.</span>
+                            </li>
+                        </ul>
+                    </section>
+
+                    <section class="how-to-panel" aria-labelledby="how-to-title">
+                        <h2 id="how-to-title">How To Use CupidBot</h2>
+                        <div class="how-to-grid">
+                            <article class="how-to-item">
+                                <h3>Normal Account</h3>
+                                <p>Select a client version and profile, then use Play Normal Account.</p>
+                            </article>
+                            <article class="how-to-item">
+                                <h3>Jagex Account</h3>
+                                <p>Use Login Jagex Account to connect, Add accounts for more characters, and Refresh to update names.</p>
+                            </article>
+                            <article class="how-to-item">
+                                <h3>Profiles</h3>
+                                <p>Pick the RuneLite profile before launching. Jagex account profile choices are saved per character.</p>
+                            </article>
+                            <article class="how-to-item">
+                                <h3>Client Version</h3>
+                                <p>Install local cupidbot-&lt;version&gt;.jar files into ~/.cupidbot, then choose the version here.</p>
+                            </article>
+                            <article class="how-to-item">
+                                <h3>Client RAM</h3>
+                                <p>Increase RAM for larger plugin setups or lower it for lighter accounts.</p>
+                            </article>
+                            <article class="how-to-item">
+                                <h3>SOCKS proxy</h3>
+                                <p>Enter ip:port:user:password only when the client should launch through a SOCKS proxy.</p>
+                            </article>
+                            <article class="how-to-item">
+                                <h3>Plugins</h3>
+                                <p>Install hub plugin jars and plugins.json into ~/.runelite/cupidbot-plugins.</p>
+                            </article>
+                            <article class="how-to-item">
+                                <h3>Folders and Logs</h3>
+                                <p>Open the menu button to jump to CupidBot folders, RuneLite folders, and launcher or client logs.</p>
+                            </article>
+                        </div>
+                    </section>
+                </main>
             </div>
             <!-- Sidebar -->
             <aside class="sidebar">

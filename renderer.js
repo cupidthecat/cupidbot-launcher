@@ -362,6 +362,56 @@ function updateProgress(percent, status) {
     statusText.textContent = status;
 }
 
+function setTextContent(elementId, value) {
+    const element = document.getElementById(elementId);
+    if (!element) {
+        return;
+    }
+
+    element.textContent = value;
+}
+
+function formatInstalledClientStatus(installedClientJars) {
+    if (!Array.isArray(installedClientJars) || installedClientJars.length === 0) {
+        return 'No local CupidBot jars found in ~/.cupidbot.';
+    }
+
+    if (installedClientJars.length === 1) {
+        return `1 local jar available: ${installedClientJars[0]}`;
+    }
+
+    return `${installedClientJars.length} local jars available. Choose one from the Version list.`;
+}
+
+function updateLauncherInfoPanel(update = {}) {
+    const { launcherVersion, clientVersion, installedClientJars } = update;
+
+    if (Object.prototype.hasOwnProperty.call(update, 'launcherVersion')) {
+        setTextContent(
+            'launcher-version-status',
+            launcherVersion
+                ? `Launcher ${launcherVersion}`
+                : 'Launcher version unavailable.'
+        );
+    }
+
+    if (Object.prototype.hasOwnProperty.call(update, 'clientVersion')) {
+        setTextContent(
+            'client-version-status',
+            clientVersion && clientVersion !== '0.0.0'
+                ? `Latest local client target: ${clientVersion}`
+                : 'No local client target is configured yet.'
+        );
+    }
+
+    if (Object.prototype.hasOwnProperty.call(update, 'installedClientJars')) {
+        setTextContent(
+            'installed-client-status',
+            formatInstalledClientStatus(installedClientJars)
+        );
+    }
+}
+
 function reportAccountsError(message) {
     if (!message) {
         return;
@@ -489,6 +539,7 @@ async function handleJagexAccountLogic(properties) {
             await setupSidebarLayout(accounts.length);
 
             const orderedClientJars = await orderClientJarsByVersion();
+            updateLauncherInfoPanel({ installedClientJars: orderedClientJars });
             populateSelectElement('client', orderedClientJars);
             populateProfileSelector(
                 await window.electron.listProfiles(),
@@ -559,6 +610,10 @@ async function initializeLauncher() {
     const cupidbotLauncherVersion = await window.electron.launcherVersion();
 
     document.title = 'CupidBot Launcher - ' + cupidbotLauncherVersion;
+    updateLauncherInfoPanel({
+        launcherVersion: cupidbotLauncherVersion,
+        clientVersion
+    });
 
     if (properties['client'] === '0.0.0' && clientVersion !== '0.0.0') {
         document.getElementById('loader-container').style.display = 'block';
@@ -1337,6 +1392,7 @@ async function populateAndSelectClientVersion(version) {
 
     // Refresh client versions list after local jar resolution
     const orderedClientJars = await orderClientJarsByVersion();
+    updateLauncherInfoPanel({ installedClientJars: orderedClientJars });
     populateSelectElement('client', orderedClientJars);
 
     // Set the newly resolved version as the selected value
@@ -1543,6 +1599,7 @@ async function initUI(properties) {
     await restoreSelectedAccountIfAny();
 
     const orderedClientJars = await orderClientJarsByVersion();
+    updateLauncherInfoPanel({ installedClientJars: orderedClientJars });
     populateSelectElement('client', orderedClientJars);
 
     // Get profiles and initialize profile selector
@@ -1664,6 +1721,10 @@ async function checkForClientUpdate(properties) {
             `Available client jars: ${listOfJars.join(', ')}`
         );
     }
+    updateLauncherInfoPanel({
+        clientVersion,
+        installedClientJars: listOfJars
+    });
     if (
         await shouldPromptForClientDownload(
             clientVersion,

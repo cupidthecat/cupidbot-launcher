@@ -5,6 +5,7 @@ body {
     background-color: #1a1d29;
     color: white;
     border-radius: 20px;
+    overflow: hidden;
 }
 
 iframe {
@@ -41,6 +42,7 @@ webview#website {
     display: flex;
     flex-direction: column;
     height: 100vh;
+    min-height: 0;
 }
 
 .navbar {
@@ -66,12 +68,166 @@ webview#website {
 .main-content {
     display: flex;
     flex: 1;
+    min-height: 0;
     overflow: hidden;
+    width: 100%;
 }
 
 .content {
-    flex: 2;
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
     overflow-y: auto;
+    scrollbar-color: #3d465d #171a27;
+    scrollbar-width: thin;
+}
+
+.content::-webkit-scrollbar,
+.sidebar::-webkit-scrollbar {
+    width: 10px;
+}
+
+.content::-webkit-scrollbar-track,
+.sidebar::-webkit-scrollbar-track {
+    background: #171a27;
+}
+
+.content::-webkit-scrollbar-thumb,
+.sidebar::-webkit-scrollbar-thumb {
+    background-color: #3d465d;
+    border: 2px solid #171a27;
+    border-radius: 8px;
+}
+
+.launcher-home {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    margin: 0 auto;
+    max-width: 980px;
+    min-height: 100%;
+    padding: 28px;
+}
+
+.launcher-home-intro {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding-bottom: 18px;
+}
+
+.launcher-kicker {
+    color: #00d4a4;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0;
+    margin: 0 0 8px;
+    text-transform: uppercase;
+}
+
+.launcher-home h1 {
+    font-size: 34px;
+    font-weight: 700;
+    letter-spacing: 0;
+    line-height: 1.15;
+    margin: 0 0 10px;
+}
+
+.launcher-home p {
+    color: #c8cedf;
+    font-size: 14px;
+    line-height: 1.55;
+    margin: 0;
+}
+
+.recent-updates-panel,
+.how-to-panel {
+    background: #202638;
+    border: 1px solid #30394f;
+    border-radius: 8px;
+    box-sizing: border-box;
+    padding: 18px;
+}
+
+.section-heading-row {
+    align-items: center;
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.recent-updates-panel h2,
+.how-to-panel h2 {
+    font-size: 20px;
+    line-height: 1.25;
+    margin: 0;
+}
+
+.status-pill {
+    background: rgba(0, 212, 164, 0.12);
+    border: 1px solid rgba(0, 212, 164, 0.38);
+    border-radius: 999px;
+    color: #7df7d6;
+    flex: 0 0 auto;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 4px 10px;
+}
+
+.updates-list {
+    display: grid;
+    gap: 10px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.updates-list li {
+    align-items: baseline;
+    background: #171d2c;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 6px;
+    display: grid;
+    gap: 6px;
+    grid-template-columns: minmax(130px, 180px) 1fr;
+    padding: 10px 12px;
+}
+
+.updates-list strong {
+    color: #ffffff;
+    font-size: 13px;
+}
+
+.updates-list span {
+    color: #c8cedf;
+    font-size: 13px;
+    line-height: 1.4;
+    min-width: 0;
+}
+
+.how-to-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 14px;
+}
+
+.how-to-item {
+    background: #171d2c;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 6px;
+    padding: 14px;
+}
+
+.how-to-item h3 {
+    color: #ffffff;
+    font-size: 15px;
+    line-height: 1.3;
+    margin: 0 0 7px;
+}
+
+.how-to-item p {
+    font-size: 13px;
 }
 
 .featured img {
@@ -305,12 +461,25 @@ h2 {
 }
 
 .sidebar {
+    box-sizing: border-box;
+    flex: 0 0 400px;
+    max-height: 100vh;
+    min-height: 0;
     width: 400px;
     background-color: #121425;
     padding: 20px;
     display: flex;
     flex-direction: column;
     align-items: center;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-color: #3d465d #121425;
+    scrollbar-width: thin;
+}
+
+.game-logo {
+    text-align: center;
+    width: 100%;
 }
 
 .sidebar-utility-row {
@@ -419,7 +588,7 @@ h2 {
 .accounts-dropdown-container {
     display: none;
     margin-bottom: 15px;
-    position: relative;
+    position: static;
     width: 100%;
 }
 
@@ -474,7 +643,7 @@ h2 {
 }
 
 .accounts-dropdown {
-    position: relative;
+    position: static;
     width: 100%;
 }
 
@@ -490,6 +659,7 @@ h2 {
     font-weight: 600;
     gap: 10px;
     justify-content: space-between;
+    min-width: 0;
     padding: 10px 14px;
     width: 100%;
 }
@@ -501,7 +671,11 @@ h2 {
 
 .accounts-dropdown-label {
     flex: 1;
+    min-width: 0;
+    overflow: hidden;
     text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .accounts-dropdown-count {
@@ -531,13 +705,10 @@ h2 {
     border-radius: 10px;
     box-shadow: 0 12px 30px rgba(5, 10, 26, 0.35);
     display: none;
-    left: 0;
     margin-top: 8px;
-    max-height: 320px;
     overflow: hidden;
-    position: absolute;
+    position: static;
     width: 100%;
-    z-index: 10;
 }
 
 .accounts-dropdown.open .accounts-dropdown-panel {
@@ -567,7 +738,7 @@ h2 {
 .accounts-options {
     display: flex;
     flex-direction: column;
-    max-height: 240px;
+    max-height: min(240px, 35vh);
     overflow-y: auto;
     padding: 6px;
     scrollbar-width: thin;
@@ -984,4 +1155,21 @@ h2 {
 
 .app-menu .submenu-item {
     font-size: 12px;
+}
+
+@media (max-width: 980px) {
+    .main-content {
+        flex-direction: column;
+    }
+
+    .sidebar {
+        flex-basis: auto;
+        max-height: 45vh;
+        width: 100%;
+    }
+
+    .how-to-grid,
+    .updates-list li {
+        grid-template-columns: 1fr;
+    }
 }
