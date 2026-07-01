@@ -33,13 +33,23 @@ describe('launcher home layout', () => {
 
     test('mission control keeps status, help, and local folder guidance visible', () => {
         expect($('.recent-updates-panel')).toHaveLength(1);
+        expect($('.readiness-panel')).toHaveLength(1);
         expect($('.how-to-panel')).toHaveLength(1);
         expect($('.recent-updates-panel').text()).toContain('Recent Updates');
+        expect($('.recent-updates-panel').text()).toContain('New Mission Control launcher UI.');
+        expect($('.readiness-panel').text()).toContain('Local Readiness');
+        expect($('.readiness-panel').text()).toContain('CupidBot Client');
         expect($('.how-to-panel').text()).toContain('Launch Paths');
         expect($('.how-to-panel').text()).toContain('Jagex Account');
         expect($('.how-to-panel').text()).toContain('SOCKS proxy');
         expect($('.local-path-card').text()).toContain('~/.cupidbot');
         expect($('.local-path-card').text()).toContain('~/.runelite/cupidbot-plugins');
+    });
+
+    test('operator guide spans the launcher systems grid', () => {
+        expect(css).toMatch(
+            /\.how-to-panel,\s*\.local-path-card\s*\{[\s\S]*grid-column:\s*1\s*\/\s*-1/
+        );
     });
 
     test('left pane and right sidebar scroll independently when content overflows', () => {

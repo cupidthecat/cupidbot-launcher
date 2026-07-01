@@ -161,12 +161,28 @@
                         <section class="recent-updates-panel mission-panel" aria-labelledby="recent-updates-title">
                             <div class="section-heading-row">
                                 <div>
-                                    <p class="panel-kicker">Readiness</p>
+                                    <p class="panel-kicker">Changelog</p>
                                     <h2 id="recent-updates-title">Recent Updates</h2>
                                 </div>
-                                <span class="status-pill">Local</span>
+                                <span class="status-pill">Launcher Log</span>
                             </div>
-                            <ul class="updates-list">
+                            <ul id="recent-updates-list" class="updates-list recent-updates-list">
+                                <li>
+                                    <strong>New Mission Control launcher UI.</strong>
+                                    <span>2026-07-01 - Launcher - eae7175</span>
+                                </li>
+                            </ul>
+                        </section>
+
+                        <section class="readiness-panel mission-panel" aria-labelledby="readiness-title">
+                            <div class="section-heading-row">
+                                <div>
+                                    <p class="panel-kicker">Local</p>
+                                    <h2 id="readiness-title">Local Readiness</h2>
+                                </div>
+                                <span class="status-pill">Runtime</span>
+                            </div>
+                            <ul class="updates-list readiness-list">
                                 <li>
                                     <strong>Launcher</strong>
                                     <span id="launcher-version-status">Checking launcher version...</span>

@@ -94,6 +94,26 @@ describe('CupidBot client IPC', () => {
         expect(axios).not.toHaveBeenCalled();
     });
 
+    test('read-update-log returns recent launcher update entries from markdown', async () => {
+        const { deps, handlers } = createDeps(tempDir);
+
+        await require('../libs/ipc-handlers')(deps);
+        const result = await handlers['read-update-log']();
+
+        expect(result).toEqual({
+            success: true,
+            entries: expect.arrayContaining([
+                {
+                    date: '2026-07-01',
+                    area: 'Launcher',
+                    repo: 'cupidbot-launcher',
+                    commit: 'eae7175',
+                    summary: 'New Mission Control launcher UI.'
+                }
+            ])
+        });
+    });
+
     test('open-client launches a local CupidBot jar', async () => {
         fs.writeFileSync(path.join(tempDir, 'cupidbot-1.2.3.jar'), 'jar');
         const { deps, handlers, spawn } = createDeps(tempDir);

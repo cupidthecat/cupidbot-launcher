@@ -412,6 +412,64 @@ function updateLauncherInfoPanel(update = {}) {
     }
 }
 
+function formatUpdateEntryMeta(entry) {
+    return [entry.date, entry.area, entry.commit]
+        .filter(Boolean)
+        .join(' - ');
+}
+
+function renderRecentUpdates(entries = []) {
+    const list = document.getElementById('recent-updates-list');
+    if (!list) {
+        return;
+    }
+
+    const validEntries = Array.isArray(entries)
+        ? entries.filter((entry) => entry && entry.summary).slice(0, 5)
+        : [];
+
+    if (validEntries.length === 0) {
+        list.innerHTML = '';
+        const item = document.createElement('li');
+        const title = document.createElement('strong');
+        const meta = document.createElement('span');
+        title.textContent = 'No update log entries yet.';
+        meta.textContent = 'The launcher will show committed updates here.';
+        item.append(title, meta);
+        list.appendChild(item);
+        return;
+    }
+
+    list.innerHTML = '';
+    validEntries.forEach((entry) => {
+        const item = document.createElement('li');
+        const title = document.createElement('strong');
+        const meta = document.createElement('span');
+        title.textContent = entry.summary;
+        meta.className = 'recent-update-meta';
+        meta.textContent = formatUpdateEntryMeta(entry);
+        item.append(title, meta);
+        list.appendChild(item);
+    });
+}
+
+async function loadRecentUpdates() {
+    if (!window.electron?.readUpdateLog) {
+        return;
+    }
+
+    try {
+        const result = await window.electron.readUpdateLog();
+        if (result?.success) {
+            renderRecentUpdates(result.entries);
+        } else if (result?.error) {
+            window.electron.logError(result.error);
+        }
+    } catch (error) {
+        window.electron.logError(error?.message || String(error));
+    }
+}
+
 function reportAccountsError(message) {
     if (!message) {
         return;
@@ -603,6 +661,8 @@ window.addEventListener('unhandledrejection', (e) => {
 });
 
 async function initializeLauncher() {
+    await loadRecentUpdates();
+
     const properties = await window.electron.readProperties();
 
     const clientVersion = await window.electron.fetchClientVersion();

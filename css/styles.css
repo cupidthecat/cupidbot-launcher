@@ -328,6 +328,7 @@ webview#website {
     padding: var(--space-5);
 }
 
+.how-to-panel,
 .local-path-card {
     grid-column: 1 / -1;
 }
@@ -387,6 +388,10 @@ webview#website {
     padding: var(--space-3);
 }
 
+.recent-updates-list li {
+    grid-template-columns: minmax(0, 1fr);
+}
+
 .updates-list strong,
 .path-grid strong {
     color: var(--text-primary);
@@ -399,6 +404,10 @@ webview#website {
     font-size: 13px;
     line-height: 1.4;
     min-width: 0;
+}
+
+.recent-updates-list strong {
+    font-size: 14px;
 }
 
 .how-to-grid {

@@ -43,6 +43,39 @@ module.exports = async function (deps) {
             .replace(new RegExp(`${CLIENT_JAR_SUFFIX}$`), '');
     }
 
+    function parseUpdateLog(markdown) {
+        return String(markdown || '')
+            .replace(/^\uFEFF/, '')
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter((line) => line.startsWith('|') && line.endsWith('|'))
+            .map((line) =>
+                line
+                    .slice(1, -1)
+                    .split('|')
+                    .map((value) => value.trim())
+            )
+            .filter((columns) => {
+                const [date, area, repo, commit, summary] = columns;
+                return (
+                    columns.length >= 5 &&
+                    date !== 'Date' &&
+                    !/^--+$/.test(date) &&
+                    area &&
+                    repo &&
+                    commit &&
+                    summary
+                );
+            })
+            .map(([date, area, repo, commit, summary]) => ({
+                date,
+                area,
+                repo,
+                commit,
+                summary
+            }));
+    }
+
     const { startAuthFlow } = require(path.join(
         projectDir,
         'libs',
@@ -198,6 +231,24 @@ module.exports = async function (deps) {
 
     ipcMain.handle('list-jars', async () => {
         return listLocalClientJars();
+    });
+
+    ipcMain.handle('read-update-log', async () => {
+        try {
+            const updateLogPath = path.join(projectDir, 'UPDATE_LOG.md');
+            if (!fs.existsSync(updateLogPath)) {
+                return { success: true, entries: [] };
+            }
+
+            const markdown = fs.readFileSync(updateLogPath, 'utf8');
+            return {
+                success: true,
+                entries: parseUpdateLog(markdown)
+            };
+        } catch (error) {
+            log.error(`Error reading update log: ${error}`);
+            return { error: error.message };
+        }
     });
 
     /*

@@ -51,6 +51,7 @@
       "!**/*.map",
       "images/**",
       "libs/**",
+      "UPDATE_LOG.md",
       "index.html",
       "css/**",
       "build/READ THIS BEFORE INSTALL.html"
