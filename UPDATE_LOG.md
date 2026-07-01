@@ -6,6 +6,7 @@ Follow `UPDATE_LOG_POLICY.md` before adding entries.
 
 | Date | Area | Repo | Commit | Summary |
 | --- | --- | --- | --- | --- |
+| 2026-07-01 | Launcher | cupidbot-launcher | 95ce8d4 | Fix hamburger menu dropdown positioning near the window edge. |
 | 2026-07-01 | Launcher | cupidbot-launcher | 54f0577 | Show launcher update log in the UI and expand the Operator Guide layout. |
 | 2026-07-01 | Launcher | cupidbot-launcher | eae7175 | New Mission Control launcher UI. |
 
