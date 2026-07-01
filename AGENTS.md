@@ -15,5 +15,8 @@ Jest powers unit and integration coverage. Mirror existing naming (`feature-name
 ## Commit & Pull Request Guidelines
 History favors concise, imperative commit subjects such as `Adjust client RAM options`; internal chores optionally use prefixes like `chore:`. Squash trivial WIP commits before pushing. Pull requests should link issues where applicable, describe user-facing impact, and include test notes (`npm test` output or manual steps). Attach UI screenshots or GIFs when renderer changes affect the interface, and mention packaging concerns if a change touches `build/` artifacts.
 
+## Update Log Workflow
+After any user-facing launcher, CupidBot client, or plugin update is committed, follow [UPDATE_LOG_POLICY.md](UPDATE_LOG_POLICY.md). The canonical log lives at [UPDATE_LOG.md](UPDATE_LOG.md), and entries are added in a follow-up log-only commit that references the completed implementation commit SHA.
+
 ## Release & Configuration Tips
 Versioning follows `package.json`. When tweaking auto-update endpoints or build metadata, update the `build.publish.url` and corresponding icons in `images/`. For platform quirks (e.g., proxy handling, Linux jar execution), verify paths through `libs/dir-module.js` and document overrides in the PR to aid downstream agents.
