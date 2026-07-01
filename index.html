@@ -207,15 +207,20 @@
                 <div class="game-info">
                     <label for="client">Version</label>
                     <select id="client"></select>
-                    <label for="character">Jagex Account</label>
-                    <div class="accounts-refresh-row">
-                        <div id="accounts-dropdown-container" class="accounts-dropdown-container" aria-live="polite">
+                    <div class="jagex-account-picker">
+                        <div class="jagex-account-picker-header">
+                            <label for="character">Jagex Accounts</label>
+                            <span class="jagex-account-picker-caption">Saved launcher characters</span>
                         </div>
-                        <button id="refresh-accounts" class="refresh-accounts-btn"
-                            title="Refresh the account list and update any outdated display names"
-                            aria-label="Refresh account list and update names">
-                            <span aria-hidden="true">⟳</span>
-                        </button>
+                        <div class="accounts-refresh-row">
+                            <div id="accounts-dropdown-container" class="accounts-dropdown-container" aria-live="polite">
+                            </div>
+                            <button id="refresh-accounts" class="refresh-accounts-btn"
+                                title="Refresh the account list and update any outdated display names"
+                                aria-label="Refresh account list and update names">
+                                <span aria-hidden="true">&#10227;</span>
+                            </button>
+                        </div>
                     </div>
                     <select id="character" class="account-select-hidden" aria-hidden="true" tabindex="-1"></select>
 

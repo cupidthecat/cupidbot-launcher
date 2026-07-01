@@ -7,11 +7,13 @@ const root = path.join(__dirname, '..');
 describe('launcher home layout', () => {
     let html;
     let css;
+    let renderer;
     let $;
 
     beforeAll(() => {
         html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
         css = fs.readFileSync(path.join(root, 'css', 'styles.css'), 'utf8');
+        renderer = fs.readFileSync(path.join(root, 'renderer.js'), 'utf8');
         $ = cheerio.load(html);
     });
 
@@ -43,5 +45,27 @@ describe('launcher home layout', () => {
         expect(css).toMatch(
             /\.accounts-dropdown-label\s*\{[\s\S]*text-overflow:\s*ellipsis/
         );
+    });
+
+    test('jagex account picker is styled as a grouped account card', () => {
+        expect($('.jagex-account-picker')).toHaveLength(1);
+        expect($('.jagex-account-picker .accounts-refresh-row')).toHaveLength(1);
+        expect(html).toContain('&#10227;');
+        expect(renderer).toContain("toggleIcon.textContent = '\\u25be'");
+        expect(html).not.toContain('â');
+        expect(renderer).not.toContain('â');
+        expect(css).toMatch(/\.jagex-account-picker\s*\{[\s\S]*background:\s*linear-gradient/);
+        expect(css).toMatch(/\.accounts-dropdown-toggle\s*\{[\s\S]*min-height:\s*64px/);
+        expect(css).toMatch(/\.accounts-dropdown-meta\s*\{[\s\S]*text-transform:\s*uppercase/);
+        expect(css).toMatch(/\.account-option-check\s*\{[\s\S]*border-radius:\s*999px/);
+        expect(css).toMatch(/\.account-option-delete\s*\{[\s\S]*border-radius:\s*8px/);
+    });
+
+    test('renderer builds account rows with selected status and checkmark', () => {
+        expect(renderer).toContain("toggleMeta.className = 'accounts-dropdown-meta'");
+        expect(renderer).toContain("optionCheck.className = 'account-option-check'");
+        expect(renderer).toContain("optionContent.className = 'account-option-content'");
+        expect(renderer).toContain("optionMeta.className = 'account-option-meta'");
+        expect(renderer).toContain("toggleMeta.textContent = 'Selected account'");
     });
 });
