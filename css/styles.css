@@ -1296,6 +1296,11 @@ input:focus-visible,
     top: 0;
 }
 
+.app-menu.submenu-left .submenu {
+    left: auto;
+    right: 100%;
+}
+
 .app-menu .menu-item.has-sub:hover > .submenu,
 .app-menu.closing .submenu {
     display: block;

@@ -1748,16 +1748,29 @@ function setupHamburgerMenu() {
         if (!menu.classList.contains('hidden')) {
             menu.classList.add('hidden');
             menu.setAttribute('aria-hidden', 'true');
+            menuBtn.setAttribute('aria-expanded', 'false');
             menu.classList.remove('closing');
         }
     };
 
     const showMenu = () => {
         const rect = menuBtn.getBoundingClientRect();
-        menu.style.left = `${Math.round(rect.left)}px`;
-        menu.style.top = `${Math.round(rect.bottom + 6)}px`;
         menu.classList.remove('hidden');
         menu.setAttribute('aria-hidden', 'false');
+        menuBtn.setAttribute('aria-expanded', 'true');
+        menu.classList.remove('closing');
+
+        const viewportWidth =
+            document.documentElement.clientWidth || window.innerWidth;
+        const margin = 12;
+        const menuWidth = menu.offsetWidth || 160;
+        const maxLeft = Math.max(margin, viewportWidth - menuWidth - margin);
+        const preferredLeft = rect.right - menuWidth;
+        const left = Math.min(Math.max(preferredLeft, margin), maxLeft);
+
+        menu.style.left = `${Math.round(left)}px`;
+        menu.style.top = `${Math.round(rect.bottom + 6)}px`;
+        menu.classList.toggle('submenu-left', rect.left > viewportWidth / 2);
     };
 
     menuBtn.addEventListener('click', (e) => {

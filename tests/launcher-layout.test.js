@@ -86,6 +86,16 @@ describe('launcher home layout', () => {
         expect(css).toMatch(/\.account-option-delete\s*\{[\s\S]*border-radius:\s*8px/);
     });
 
+    test('hamburger menu stays accessible near the window edge', () => {
+        expect($('#menu-btn').attr('aria-haspopup')).toBe('menu');
+        expect($('#menu-btn').attr('aria-controls')).toBe('app-menu');
+        expect($('#menu-btn').attr('aria-expanded')).toBe('false');
+        expect(renderer).toContain("menuBtn.setAttribute('aria-expanded', 'true')");
+        expect(renderer).toContain("menuBtn.setAttribute('aria-expanded', 'false')");
+        expect(renderer).toContain("menu.classList.toggle('submenu-left'");
+        expect(css).toMatch(/\.app-menu\.submenu-left\s+\.submenu\s*\{[\s\S]*left:\s*auto[\s\S]*right:\s*100%/);
+    });
+
     test('mission control styles use tokenized surfaces and accessible motion controls', () => {
         expect(css).toMatch(/:root\s*\{[\s\S]*--surface-base:/);
         expect(css).toMatch(/:root\s*\{[\s\S]*--accent-success:/);
