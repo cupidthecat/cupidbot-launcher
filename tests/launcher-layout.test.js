@@ -17,14 +17,29 @@ describe('launcher home layout', () => {
         $ = cheerio.load(html);
     });
 
-    test('renders recent updates and how-to content in the left pane', () => {
-        expect($('.launcher-home').closest('.content')).toHaveLength(1);
+    test('renders mission control shell with preserved launch controls', () => {
+        expect($('.mission-control-shell')).toHaveLength(1);
+        expect($('.command-bar')).toHaveLength(1);
+        expect($('.launch-console')).toHaveLength(1);
+        expect($('.account-dock')).toHaveLength(1);
+        expect($('.systems-grid')).toHaveLength(1);
+        expect($('#play-no-jagex-account').closest('.launch-actions')).toHaveLength(1);
+        expect($('#play').closest('.launch-actions')).toHaveLength(1);
+        expect($('#client').closest('.flight-panel')).toHaveLength(1);
+        expect($('#profile').closest('.flight-panel')).toHaveLength(1);
+        expect($('#client-ram').closest('.flight-panel')).toHaveLength(1);
+        expect($('#proxy-ip').closest('.flight-panel')).toHaveLength(1);
+    });
+
+    test('mission control keeps status, help, and local folder guidance visible', () => {
         expect($('.recent-updates-panel')).toHaveLength(1);
         expect($('.how-to-panel')).toHaveLength(1);
         expect($('.recent-updates-panel').text()).toContain('Recent Updates');
-        expect($('.how-to-panel').text()).toContain('How To Use CupidBot');
+        expect($('.how-to-panel').text()).toContain('Launch Paths');
         expect($('.how-to-panel').text()).toContain('Jagex Account');
         expect($('.how-to-panel').text()).toContain('SOCKS proxy');
+        expect($('.local-path-card').text()).toContain('~/.cupidbot');
+        expect($('.local-path-card').text()).toContain('~/.runelite/cupidbot-plugins');
     });
 
     test('left pane and right sidebar scroll independently when content overflows', () => {
@@ -39,7 +54,7 @@ describe('launcher home layout', () => {
             /\.accounts-dropdown-panel\s*\{[\s\S]*position:\s*static/
         );
         expect(css).toMatch(
-            /\.accounts-options\s*\{[\s\S]*max-height:\s*min\(240px,\s*35vh\)/
+            /\.accounts-options\s*\{[\s\S]*max-height:\s*min\(260px,\s*36vh\)/
         );
         expect(css).toMatch(/\.accounts-options\s*\{[\s\S]*overflow-y:\s*auto/);
         expect(css).toMatch(
@@ -54,11 +69,19 @@ describe('launcher home layout', () => {
         expect(renderer).toContain("toggleIcon.textContent = '\\u25be'");
         expect(html).not.toContain('â');
         expect(renderer).not.toContain('â');
-        expect(css).toMatch(/\.jagex-account-picker\s*\{[\s\S]*background:\s*linear-gradient/);
-        expect(css).toMatch(/\.accounts-dropdown-toggle\s*\{[\s\S]*min-height:\s*64px/);
+        expect(css).toMatch(/\.jagex-account-picker\s*\{[\s\S]*background:\s*var\(--surface-raised\)/);
+        expect(css).toMatch(/\.accounts-dropdown-toggle\s*\{[\s\S]*min-height:\s*68px/);
         expect(css).toMatch(/\.accounts-dropdown-meta\s*\{[\s\S]*text-transform:\s*uppercase/);
         expect(css).toMatch(/\.account-option-check\s*\{[\s\S]*border-radius:\s*999px/);
         expect(css).toMatch(/\.account-option-delete\s*\{[\s\S]*border-radius:\s*8px/);
+    });
+
+    test('mission control styles use tokenized surfaces and accessible motion controls', () => {
+        expect(css).toMatch(/:root\s*\{[\s\S]*--surface-base:/);
+        expect(css).toMatch(/:root\s*\{[\s\S]*--accent-success:/);
+        expect(css).toMatch(/\.launch-console\s*\{[\s\S]*background:\s*linear-gradient/);
+        expect(css).toMatch(/\.command-status-strip\s*\{[\s\S]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
+        expect(css).toMatch(/@media\s*\(prefers-reduced-motion:\s*reduce\)/);
     });
 
     test('renderer builds account rows with selected status and checkmark', () => {
