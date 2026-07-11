@@ -14,12 +14,12 @@ describe('native OS title bar', () => {
         expect($('.titlebar-controls')).toHaveLength(0);
     });
 
-    test('launcher keeps utility controls in the command bar outside title bar chrome', () => {
+    test('launcher keeps utility controls in the app header outside title bar chrome', () => {
         const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
         const $ = cheerio.load(html);
 
-        expect($('#menu-btn').closest('.command-bar')).toHaveLength(1);
-        expect($('#user-session').closest('.command-bar')).toHaveLength(1);
+        expect($('#menu-btn').closest('.app-header')).toHaveLength(1);
+        expect($('#user-session').closest('.app-header')).toHaveLength(1);
         expect($('#menu-btn').closest('.titlebar')).toHaveLength(0);
         expect($('#user-session').closest('.titlebar')).toHaveLength(0);
     });

@@ -4,6 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self';">
     <meta name="description" content="CupidBot Launcher - launch and manage local CupidBot client jars.">
     <meta name="keywords" content="CupidBot, Launcher, Local Client, Jagex, Account, Game, Proxy">
     <title>CupidBot Launcher</title>
@@ -11,346 +13,401 @@
 </head>
 
 <body>
-    <div id="auth-modal" class="auth-modal auth-hidden" role="dialog" aria-modal="true">
-        <div class="auth-card">
-            <h1 class="auth-title">CupidBot Launcher</h1>
-            <p class="auth-subtitle">Sign in to continue</p>
-            <div class="auth-tabs" role="tablist">
+    <div id="auth-modal" class="modal-backdrop auth-modal auth-hidden" role="dialog" aria-modal="true"
+        aria-labelledby="auth-title">
+        <section class="auth-card">
+            <div class="auth-brand" aria-hidden="true">
+                <img src="images/cupidbot_transparent.png" alt="" width="58" height="58">
+                <div>
+                    <strong>CupidBot</strong>
+                    <span>Desktop launcher</span>
+                </div>
+            </div>
+            <div class="auth-heading">
+                <p class="eyebrow">Welcome</p>
+                <h1 id="auth-title" class="auth-title">Sign in to continue</h1>
+                <p class="auth-subtitle">Access your local CupidBot workspace.</p>
+            </div>
+            <div class="auth-tabs" role="tablist" aria-label="Authentication options">
                 <button id="auth-tab-signin" class="auth-tab active" data-target="signin" role="tab"
-                    aria-selected="true">
-                    Sign In
+                    aria-selected="true" type="button">
+                    Sign in
                 </button>
-                <button id="auth-tab-signup" class="auth-tab" data-target="signup" role="tab" aria-selected="false">
-                    Create Account
+                <button id="auth-tab-signup" class="auth-tab" data-target="signup" role="tab"
+                    aria-selected="false" type="button">
+                    Create account
                 </button>
             </div>
             <form id="signin-form" class="auth-form" novalidate>
-                <label for="signin-email">Email</label>
-                <input id="signin-email" name="email" type="email" autocomplete="username" required />
-                <label for="signin-password">Password</label>
-                <input id="signin-password" name="password" type="password" autocomplete="current-password" required />
-                <button id="signin-submit" type="submit" class="auth-submit">Sign In</button>
+                <div class="field-group">
+                    <label for="signin-email">Email address</label>
+                    <input id="signin-email" name="email" type="email" autocomplete="username" required>
+                </div>
+                <div class="field-group">
+                    <label for="signin-password">Password</label>
+                    <input id="signin-password" name="password" type="password" autocomplete="current-password"
+                        required>
+                </div>
+                <button id="signin-submit" type="submit" class="button button-primary auth-submit">
+                    Sign in
+                </button>
             </form>
             <form id="signup-form" class="auth-form auth-hidden" novalidate>
-                <label for="signup-email">Email</label>
-                <input id="signup-email" name="email" type="email" autocomplete="email" required />
-                <label for="signup-password">Password</label>
-                <input id="signup-password" name="password" type="password" autocomplete="new-password" minlength="8"
-                    required />
-                <button id="signup-submit" type="submit" class="auth-submit">Create Account</button>
+                <div class="field-group">
+                    <label for="signup-email">Email address</label>
+                    <input id="signup-email" name="email" type="email" autocomplete="email" required>
+                </div>
+                <div class="field-group">
+                    <label for="signup-password">Password</label>
+                    <input id="signup-password" name="password" type="password" autocomplete="new-password"
+                        minlength="8" required>
+                    <span class="field-hint">Use at least 8 characters.</span>
+                </div>
+                <button id="signup-submit" type="submit" class="button button-primary auth-submit">
+                    Create account
+                </button>
             </form>
-            <p id="auth-error" class="auth-error" role="alert" aria-live="polite"></p>
-        </div>
+            <p id="auth-error" class="form-message auth-error" role="alert" aria-live="polite"></p>
+        </section>
     </div>
 
-    <div id="change-password-modal" class="auth-modal auth-hidden" role="dialog" aria-modal="true"
+    <div id="change-password-modal" class="modal-backdrop auth-modal auth-hidden" role="dialog" aria-modal="true"
         aria-labelledby="change-password-title">
-        <div class="auth-card">
-            <h1 id="change-password-title" class="auth-title">Change Password</h1>
+        <section class="auth-card auth-card-compact">
+            <div class="auth-heading">
+                <p class="eyebrow">Account security</p>
+                <h1 id="change-password-title" class="auth-title">Change password</h1>
+                <p class="auth-subtitle">Confirm your current password before choosing a new one.</p>
+            </div>
             <form id="change-password-form" class="auth-form" novalidate>
-                <label for="current-password-input">Current Password</label>
-                <input id="current-password-input" name="current-password" type="password"
-                    autocomplete="current-password" required />
-                <label for="change-password-input">New Password</label>
-                <input id="change-password-input" name="new-password" type="password" autocomplete="new-password"
-                    minlength="8" required />
-                <button id="change-password-submit" type="submit" class="auth-submit">
-                    Save Password
-                </button>
+                <div class="field-group">
+                    <label for="current-password-input">Current password</label>
+                    <input id="current-password-input" name="current-password" type="password"
+                        autocomplete="current-password" required>
+                </div>
+                <div class="field-group">
+                    <label for="change-password-input">New password</label>
+                    <input id="change-password-input" name="new-password" type="password"
+                        autocomplete="new-password" minlength="8" required>
+                    <span class="field-hint">Use at least 8 characters.</span>
+                </div>
+                <div class="dialog-actions">
+                    <button id="change-password-cancel" class="button button-secondary" type="button">Cancel</button>
+                    <button id="change-password-submit" type="submit" class="button button-primary auth-submit">
+                        Save password
+                    </button>
+                </div>
             </form>
-            <p id="change-password-error" class="auth-error" role="alert" aria-live="polite"></p>
-            <button id="change-password-cancel" class="auth-cancel" type="button">Cancel</button>
-        </div>
+            <p id="change-password-error" class="form-message auth-error" role="alert" aria-live="polite"></p>
+        </section>
     </div>
 
-    <div id="loader-container">
-        <p class="panel-kicker">Launch Progress</p>
-        <h1>Local Client Progress</h1>
-        <div id="loader">
-            <div id="progress-bar">0%</div>
-        </div>
-        <div id="status"></div>
-        <p class="loader-tip">
-            Local mode: install client jars into ~/.cupidbot and hub plugins into ~/.runelite/cupidbot-plugins.
-        </p>
-    </div>
-
-    <div class="featured">
-        <div id="update-available">
-            <p class="panel-kicker">Command Notice</p>
-            <h2>Local Client Available</h2>
-            <p>
-                A local version of <strong>CupidBot</strong> is available.
-            </p>
-            <div class="modal-actions">
-                <button id="update-now-btn" class="loadingButton">
-                    Use Local Version
-                </button>
-                <button id="remind-me-later-btn" class="loadingButton">
-                    Remind me later
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <div id="main-container" class="container mission-control-shell">
-        <header class="command-bar">
-            <div class="brand-cluster">
-                <img class="brand-mark" alt="CupidBot Logo" src="images/cupidbot_transparent.png" width="52"
-                    height="52">
+    <div id="loader-container" class="modal-backdrop progress-overlay" role="dialog" aria-modal="true"
+        aria-labelledby="progress-title" aria-describedby="status">
+        <section class="progress-card">
+            <div class="progress-heading">
+                <span class="progress-icon" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 3v6"></path>
+                        <path d="M12 15v6"></path>
+                        <path d="M3 12h6"></path>
+                        <path d="M15 12h6"></path>
+                    </svg>
+                </span>
                 <div>
-                    <p class="launcher-kicker">Local Mission Control</p>
-                    <h1 id="launcher-home-title">CupidBot Launcher</h1>
+                    <p class="eyebrow">Preparing client</p>
+                    <h1 id="progress-title">CupidBot is getting ready</h1>
                 </div>
             </div>
-            <div class="command-status-strip" aria-label="Launcher readiness">
-                <div class="command-status-card">
-                    <span class="status-dot online" aria-hidden="true"></span>
-                    <span>Local jars</span>
-                    <strong>Tracked</strong>
-                </div>
-                <div class="command-status-card">
-                    <span class="status-dot standby" aria-hidden="true"></span>
-                    <span>Profiles</span>
-                    <strong>Ready</strong>
-                </div>
-                <div class="command-status-card">
-                    <span class="status-dot warm" aria-hidden="true"></span>
-                    <span>Accounts</span>
-                    <strong>Synced</strong>
-                </div>
+            <div id="loader" class="progress-track" aria-hidden="true">
+                <div id="progress-bar">0%</div>
             </div>
-            <div class="command-actions">
-                <button id="menu-btn" class="sidebar-menu-button hamburger" type="button" title="Menu" aria-label="Application Menu" aria-haspopup="menu" aria-controls="app-menu" aria-expanded="false">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2"
-                        stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="3" y1="6" x2="21" y2="6"></line>
-                        <line x1="3" y1="12" x2="21" y2="12"></line>
-                        <line x1="3" y1="18" x2="21" y2="18"></line>
+            <p id="status" class="progress-status" aria-live="polite">Checking local files…</p>
+            <p class="progress-note">Client jars stay in <code>~/.cupidbot</code>.</p>
+        </section>
+    </div>
+
+    <div id="main-container" class="app-shell">
+        <header class="app-header">
+            <a class="brand" href="#launch-workspace" aria-label="CupidBot launcher home">
+                <img class="brand-mark" alt="CupidBot" src="images/cupidbot_transparent.png" width="46" height="46">
+                <span class="brand-copy">
+                    <strong>CupidBot</strong>
+                    <span>Launcher</span>
+                </span>
+            </a>
+
+            <div class="header-actions">
+                <div id="header-readiness" class="readiness-chip is-checking" aria-live="polite">
+                    <span class="readiness-dot" aria-hidden="true"></span>
+                    <span id="header-readiness-label">Checking local client…</span>
+                </div>
+
+                <div id="user-session" class="user-session hidden" aria-live="polite">
+                    <span id="session-email" class="session-email"></span>
+                    <button id="change-password-btn" class="header-button session-action" type="button">
+                        Change password
+                    </button>
+                    <button id="signout-btn" class="header-button session-action" type="button">Sign out</button>
+                </div>
+
+                <button id="menu-btn" class="icon-button" type="button" title="Launcher menu"
+                    aria-label="Open launcher menu" aria-haspopup="menu" aria-controls="app-menu" aria-expanded="false">
+                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="5" cy="12" r="1"></circle>
+                        <circle cx="12" cy="12" r="1"></circle>
+                        <circle cx="19" cy="12" r="1"></circle>
                     </svg>
                 </button>
-                <div id="user-session" class="user-session" aria-live="polite">
-                    <span id="session-email" class="session-email"></span>
-                    <button id="change-password-btn" class="session-action" type="button">Change Password</button>
-                    <button id="signout-btn" class="session-action" type="button">Sign Out</button>
-                </div>
             </div>
         </header>
 
-        <div class="main-content">
-            <div class="content">
-                <main class="launcher-home launch-console" aria-labelledby="launcher-home-title">
-                    <section class="launcher-home-intro launch-hero">
-                        <p class="launcher-kicker">Launch Console</p>
-                        <h2>Choose a route and deploy your local client.</h2>
-                        <p>
-                            Pick the right account path, verify local client readiness, and launch CupidBot with the
-                            profile, memory, and proxy settings already staged.
-                        </p>
-                        <div class="play-buttons launch-actions">
-                            <button id="play-no-jagex-account" class="play-button loadingButton">
-                                Play Normal Account
-                            </button>
-                            <button id="play" class="play-button loadingButton">
-                                Login Jagex Account
-                            </button>
-                        </div>
-                    </section>
-
-                    <section class="systems-grid" aria-label="Launcher systems">
-                        <section class="recent-updates-panel mission-panel" aria-labelledby="recent-updates-title">
-                            <div class="section-heading-row">
-                                <div>
-                                    <p class="panel-kicker">Changelog</p>
-                                    <h2 id="recent-updates-title">Recent Updates</h2>
-                                </div>
-                                <span class="status-pill">Launcher Log</span>
-                            </div>
-                            <ul id="recent-updates-list" class="updates-list recent-updates-list">
-                                <li>
-                                    <strong>New Mission Control launcher UI.</strong>
-                                    <span>2026-07-01 - Launcher - eae7175</span>
-                                </li>
-                            </ul>
-                        </section>
-
-                        <section class="readiness-panel mission-panel" aria-labelledby="readiness-title">
-                            <div class="section-heading-row">
-                                <div>
-                                    <p class="panel-kicker">Local</p>
-                                    <h2 id="readiness-title">Local Readiness</h2>
-                                </div>
-                                <span class="status-pill">Runtime</span>
-                            </div>
-                            <ul class="updates-list readiness-list">
-                                <li>
-                                    <strong>Launcher</strong>
-                                    <span id="launcher-version-status">Checking launcher version...</span>
-                                </li>
-                                <li>
-                                    <strong>CupidBot Client</strong>
-                                    <span id="client-version-status">Checking client version...</span>
-                                </li>
-                                <li>
-                                    <strong>Installed Jars</strong>
-                                    <span id="installed-client-status">Checking local jars...</span>
-                                </li>
-                                <li>
-                                    <strong>Plugins</strong>
-                                    <span>Hub plugins load from ~/.runelite/cupidbot-plugins.</span>
-                                </li>
-                            </ul>
-                        </section>
-
-                        <section class="how-to-panel mission-panel" aria-labelledby="how-to-title">
-                            <div class="section-heading-row">
-                                <div>
-                                    <p class="panel-kicker">Operator Guide</p>
-                                    <h2 id="how-to-title">Launch Paths</h2>
-                                </div>
-                            </div>
-                            <div class="how-to-grid">
-                                <article class="how-to-item">
-                                    <h3>Normal Account</h3>
-                                    <p>Select a client version and profile, then use Play Normal Account.</p>
-                                </article>
-                                <article class="how-to-item">
-                                    <h3>Jagex Account</h3>
-                                    <p>Use Login Jagex Account to connect, Add accounts for more characters, and Refresh to update names.</p>
-                                </article>
-                                <article class="how-to-item">
-                                    <h3>Profiles</h3>
-                                    <p>Pick the RuneLite profile before launching. Jagex account profile choices are saved per character.</p>
-                                </article>
-                                <article class="how-to-item">
-                                    <h3>SOCKS proxy</h3>
-                                    <p>Enter ip:port:user:password only when the client should launch through a SOCKS proxy.</p>
-                                </article>
-                            </div>
-                        </section>
-
-                        <section class="local-path-card mission-panel" aria-labelledby="local-paths-title">
-                            <div class="section-heading-row">
-                                <div>
-                                    <p class="panel-kicker">Local Files</p>
-                                    <h2 id="local-paths-title">Folders and Plugins</h2>
-                                </div>
-                            </div>
-                            <div class="path-grid">
-                                <div>
-                                    <span>Client jars</span>
-                                    <strong>~/.cupidbot</strong>
-                                </div>
-                                <div>
-                                    <span>Hub plugins</span>
-                                    <strong>~/.runelite/cupidbot-plugins</strong>
-                                </div>
-                                <div>
-                                    <span>Logs and folders</span>
-                                    <strong>Open from the command menu</strong>
-                                </div>
-                            </div>
-                        </section>
-                    </section>
-                </main>
-            </div>
-
-            <aside class="sidebar account-dock" aria-label="Account and flight settings">
-                <div class="account-dock-header">
-                    <div class="game-logo">
-                        <img alt="CupidBot Logo" src="images/cupidbot_transparent.png" width="100" height="100">
-                    </div>
-                    <div>
-                        <p class="panel-kicker">Account Dock</p>
-                        <h2>Stage the session</h2>
-                    </div>
-                </div>
-
-                <button id="add-accounts" class="add-accounts loadingButton">
-                    Add accounts
-                </button>
-                <button id="logout" class="logout-button loadingButton">
-                    Remove All Accounts
-                </button>
-
-                <div class="game-info">
-                    <section class="flight-panel">
-                        <div class="section-heading-row compact">
-                            <div>
-                                <p class="panel-kicker">Flight Plan</p>
-                                <h3>Client setup</h3>
-                            </div>
-                        </div>
-                        <label for="client">Version</label>
-                        <select id="client"></select>
-
-                        <label for="profile">Profile</label>
-                        <select id="profile">
-                            <option value="default">Default</option>
-                        </select>
-
-                        <label for="client-ram">Client RAM</label>
-                        <select id="client-ram">
-                            <option value="256m">256 MB</option>
-                            <option value="512m">512 MB</option>
-                            <option value="1g">1 GB</option>
-                            <option value="2g" selected>2 GB</option>
-                            <option value="4g">4 GB</option>
-                            <option value="6g">6 GB</option>
-                            <option value="8g">8 GB</option>
-                        </select>
-                    </section>
-
-                    <section class="jagex-account-picker">
-                        <div class="jagex-account-picker-header">
-                            <label for="character">Jagex Accounts</label>
-                            <span class="jagex-account-picker-caption">Saved launcher characters</span>
-                        </div>
-                        <div class="accounts-refresh-row">
-                            <div id="accounts-dropdown-container" class="accounts-dropdown-container" aria-live="polite">
-                            </div>
-                            <button id="refresh-accounts" class="refresh-accounts-btn"
-                                title="Refresh the account list and update any outdated display names"
-                                aria-label="Refresh account list and update names">
-                                <span aria-hidden="true">&#10227;</span>
-                            </button>
-                        </div>
-                    </section>
-                    <select id="character" class="account-select-hidden" aria-hidden="true" tabindex="-1"></select>
-                </div>
-
-                <section class="proxy-section flight-panel">
-                    <div class="section-heading-row compact">
+        <div class="workspace-scroll">
+            <main id="launch-workspace" class="workspace-grid" aria-labelledby="workspace-title">
+                <section class="launch-panel">
+                    <header class="panel-heading launch-heading">
                         <div>
-                            <p class="panel-kicker">Network</p>
-                            <h3>SOCKS proxy</h3>
+                            <p class="eyebrow">Local session</p>
+                            <h1 id="workspace-title">Launch CupidBot</h1>
+                            <p>Choose who you are playing as, confirm the client setup, and launch.</p>
                         </div>
-                    </div>
-                    <label for="proxy-ip">Proxy (optional, only SOCKS supported)</label>
-                    <input id="proxy-ip" type="text" placeholder="ip:port:user:password">
+                        <span class="local-badge">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                                <path d="m9 12 2 2 4-4"></path>
+                            </svg>
+                            Local only
+                        </span>
+                    </header>
+
+                    <form id="launch-form" class="launch-form" novalidate>
+                        <section class="identity-section" aria-labelledby="identity-title">
+                            <div class="section-title-row">
+                                <div>
+                                    <h2 id="identity-title">Play as</h2>
+                                    <p>Normal account or a saved Jagex character.</p>
+                                </div>
+                                <div class="account-actions">
+                                    <button id="refresh-accounts" class="text-button" type="button"
+                                        title="Refresh saved Jagex characters">
+                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                            stroke-linejoin="round" aria-hidden="true">
+                                            <path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5"></path>
+                                            <path d="M4 13a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5"></path>
+                                        </svg>
+                                        Refresh
+                                    </button>
+                                    <button id="add-accounts" class="text-button text-button-accent" type="button">
+                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                            stroke-linejoin="round" aria-hidden="true">
+                                            <path d="M12 5v14M5 12h14"></path>
+                                        </svg>
+                                        Add Jagex account
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div id="accounts-dropdown-container" class="accounts-dropdown-container"
+                                aria-live="polite"></div>
+                            <select id="character" class="account-select-hidden" aria-hidden="true" tabindex="-1">
+                                <option value="none">Normal account</option>
+                            </select>
+                            <button id="logout" class="text-button danger-button account-bulk-action" type="button">
+                                Remove all Jagex accounts
+                            </button>
+                        </section>
+
+                        <div class="settings-grid" aria-label="Essential client settings">
+                            <div class="field-group">
+                                <label for="client">Client version</label>
+                                <select id="client"></select>
+                                <span class="field-hint">Installed in ~/.cupidbot</span>
+                            </div>
+                            <div class="field-group">
+                                <label for="profile">RuneLite profile</label>
+                                <select id="profile">
+                                    <option value="default">Default</option>
+                                </select>
+                                <span class="field-hint">Remembered for this identity</span>
+                            </div>
+                        </div>
+
+                        <details id="advanced-settings" class="advanced-settings">
+                            <summary>
+                                <span>
+                                    <strong>Advanced settings</strong>
+                                    <small id="advanced-settings-summary">2 GB memory · No proxy</small>
+                                </span>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="m6 9 6 6 6-6"></path>
+                                </svg>
+                            </summary>
+                            <div class="advanced-settings-content">
+                                <div class="field-group">
+                                    <label for="client-ram">Client memory</label>
+                                    <select id="client-ram">
+                                        <option value="256m">256 MB</option>
+                                        <option value="512m">512 MB</option>
+                                        <option value="1g">1 GB</option>
+                                        <option value="2g" selected>2 GB</option>
+                                        <option value="4g">4 GB</option>
+                                        <option value="6g">6 GB</option>
+                                        <option value="8g">8 GB</option>
+                                    </select>
+                                </div>
+                                <div class="field-group">
+                                    <label for="proxy-ip">SOCKS proxy</label>
+                                    <input id="proxy-ip" type="text" placeholder="ip:port:user:password"
+                                        autocomplete="off">
+                                    <span class="field-hint">Optional. SOCKS proxies only.</span>
+                                </div>
+                            </div>
+                        </details>
+
+                        <footer class="launch-footer">
+                            <div class="launch-copy">
+                                <span class="launch-summary-label">Ready to launch</span>
+                                <strong id="launch-summary">Normal account · Default profile</strong>
+                                <p id="launch-status" class="form-message" role="status" aria-live="polite"></p>
+                            </div>
+                            <button id="launch-client" class="button button-primary launch-button" type="submit">
+                                <span>Launch normal account</span>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="m5 12 14 0"></path>
+                                    <path d="m13 6 6 6-6 6"></path>
+                                </svg>
+                            </button>
+                        </footer>
+                    </form>
                 </section>
-            </aside>
+
+                <aside class="utility-rail" aria-label="Launcher information">
+                    <section class="rail-card readiness-card" aria-labelledby="readiness-title">
+                        <div class="rail-heading">
+                            <div>
+                                <p class="eyebrow">System</p>
+                                <h2 id="readiness-title">Local readiness</h2>
+                            </div>
+                            <span id="readiness-state" class="state-badge is-checking">Checking</span>
+                        </div>
+                        <dl class="readiness-list">
+                            <div>
+                                <dt>Launcher</dt>
+                                <dd id="launcher-version-status">Checking version…</dd>
+                            </div>
+                            <div>
+                                <dt>Client target</dt>
+                                <dd id="client-version-status">Checking target…</dd>
+                            </div>
+                            <div>
+                                <dt>Installed clients</dt>
+                                <dd id="installed-client-status">Checking local jars…</dd>
+                            </div>
+                        </dl>
+                        <button id="open-client-folder" class="button button-secondary readiness-action" type="button">
+                            Open CupidBot folder
+                        </button>
+                    </section>
+
+                    <section id="update-available" class="rail-card update-notice is-hidden" aria-labelledby="update-title">
+                        <div class="update-icon" aria-hidden="true">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 3v12"></path>
+                                <path d="m7 10 5 5 5-5"></path>
+                                <path d="M5 21h14"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="eyebrow">Local client</p>
+                            <h2 id="update-title">A newer version is available</h2>
+                            <p id="update-description">Use the latest client found in your local store.</p>
+                        </div>
+                        <div class="notice-actions">
+                            <button id="update-now-btn" class="button button-primary" type="button">Use version</button>
+                            <button id="remind-me-later-btn" class="button button-ghost" type="button">Dismiss</button>
+                        </div>
+                    </section>
+
+                    <details class="rail-card rail-disclosure updates-disclosure">
+                        <summary>
+                            <span>
+                                <span class="eyebrow">Changelog</span>
+                                <strong>Recent updates</strong>
+                            </span>
+                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="m6 9 6 6 6-6"></path>
+                            </svg>
+                        </summary>
+                        <ul id="recent-updates-list" class="recent-updates-list">
+                            <li>
+                                <strong>Loading updates…</strong>
+                                <span>Reading the local launcher log.</span>
+                            </li>
+                        </ul>
+                    </details>
+
+                    <details class="rail-card rail-disclosure help-disclosure">
+                        <summary>
+                            <span>
+                                <span class="eyebrow">Reference</span>
+                                <strong>Paths and help</strong>
+                            </span>
+                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="m6 9 6 6 6-6"></path>
+                            </svg>
+                        </summary>
+                        <div class="help-content">
+                            <div class="path-row">
+                                <span>Client jars</span>
+                                <code>~/.cupidbot</code>
+                            </div>
+                            <div class="path-row">
+                                <span>Hub plugins</span>
+                                <code>~/.runelite/cupidbot-plugins</code>
+                            </div>
+                            <p>Normal accounts launch without Jagex credentials. Add a Jagex account to save and launch a character.</p>
+                            <p>Profiles are remembered per identity. Proxy settings apply only when a SOCKS proxy is provided.</p>
+                        </div>
+                    </details>
+                </aside>
+            </main>
         </div>
 
-        <div id="app-menu" class="app-menu hidden" aria-hidden="true">
-            <ul class="menu-root">
-                <li class="menu-item has-sub" data-action="open-folder-root">
-                    <span class="menu-label">Open &#9656;</span>
-                    <ul class="submenu">
-                        <li class="submenu-item" data-location="cupidbot-folder">CupidBot Folder</li>
-                        <li class="submenu-item" data-location="runelite-folder">Runelite Folder</li>
-                        <li class="submenu-item" data-location="launcher-logs">Launcher Logs</li>
-                        <li class="submenu-item" data-location="client-logs">Client Logs</li>
-                    </ul>
-                </li>
-            </ul>
+        <div id="app-menu" class="app-menu hidden" role="menu" aria-hidden="true">
+            <p class="menu-heading">Open local folder</p>
+            <button class="menu-action" type="button" role="menuitem" data-location="cupidbot-folder">
+                <span>CupidBot folder</span>
+                <small>Client jars and launcher state</small>
+            </button>
+            <button class="menu-action" type="button" role="menuitem" data-location="runelite-folder">
+                <span>RuneLite folder</span>
+                <small>Profiles and installed plugins</small>
+            </button>
+            <button class="menu-action" type="button" role="menuitem" data-location="launcher-logs">
+                <span>Launcher logs</span>
+                <small>Launcher diagnostics</small>
+            </button>
+            <button class="menu-action" type="button" role="menuitem" data-location="client-logs">
+                <span>Client logs</span>
+                <small>CupidBot runtime diagnostics</small>
+            </button>
         </div>
+
+        <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
     </div>
-    <script>
-        const script = document.createElement('script');
-        script.src = `renderer.js?cache-bust=${Date.now()}`;
-        document.head.appendChild(script);
-    </script>
+
+    <script src="libs/launcher-ui-state.js"></script>
+    <script src="renderer.js"></script>
 </body>
 
 </html>

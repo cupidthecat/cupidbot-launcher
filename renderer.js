@@ -1,14 +1,27 @@
-let accounts = [];
-let restoringSelectedAccount = false;
-let iii = null;
-let lastAccountsReadError = null;
-let cleanupAccountsDropdownListeners = null;
-
+const NORMAL_IDENTITY = 'none';
 const DEFAULT_CLIENT_RAM = '1g';
-let launcherInitialized = false;
-let authUiReady = false;
-let mockAuthEnabled = false;
-let currentSessionEmail = '';
+const ACCOUNT_POLL_INTERVAL_MS = 1000;
+const UPDATE_POLL_INTERVAL_MS = 5 * 60 * 1000;
+
+const launcherState = {
+    accounts: [],
+    jars: [],
+    profiles: [],
+    clientVersion: '0.0.0',
+    launcherVersion: '',
+    launchBusy: false,
+    launcherInitialized: false,
+    authUiReady: false,
+    mockAuthEnabled: false,
+    currentSessionEmail: '',
+    accountsPollHandle: null,
+    accountsPollBusy: false,
+    updatePollHandle: null,
+    accountActionBusy: false,
+    selectionEpoch: 0,
+    lastAccountsReadError: null,
+    cleanupAccountsDropdownListeners: null
+};
 
 function $(id) {
     return document.getElementById(id);
@@ -16,29 +29,71 @@ function $(id) {
 
 function toggleClass(element, className, shouldAdd) {
     if (!element) return;
-    if (shouldAdd) {
-        element.classList.add(className);
-    } else {
-        element.classList.remove(className);
-    }
+    element.classList.toggle(className, Boolean(shouldAdd));
 }
 
-function setButtonLoading(button, isLoading, loadingText) {
+function asErrorMessage(error, fallback = 'Something went wrong.') {
+    if (typeof error === 'string' && error.trim()) {
+        return error;
+    }
+    if (error?.message) {
+        return error.message;
+    }
+    if (error?.error) {
+        return error.error;
+    }
+    return fallback;
+}
+
+function logError(error) {
+    const message = asErrorMessage(error);
+    window.electron?.logError?.(message);
+}
+
+function showToast(message, type = 'info') {
+    const region = $('toast-region');
+    if (!region || !message) return;
+
+    const toast = document.createElement('div');
+    toast.className = `toast is-${type}`;
+    toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    toast.textContent = message;
+    region.appendChild(toast);
+
+    const removeToast = () => {
+        toast.classList.add('is-leaving');
+        setTimeout(() => toast.remove(), 240);
+    };
+
+    setTimeout(removeToast, type === 'error' ? 6200 : 4200);
+}
+
+function setLaunchMessage(message = '', type = '') {
+    const element = $('launch-status');
+    if (!element) return;
+    element.textContent = message;
+    element.classList.toggle('is-error', type === 'error');
+    element.classList.toggle('is-success', type === 'success');
+}
+
+async function showBlockingError(error, fallback) {
+    const message = asErrorMessage(error, fallback);
+    setLaunchMessage(message, 'error');
+    logError(message);
+    await window.electron?.errorAlert?.(message);
+}
+
+function setButtonBusy(button, isBusy) {
     if (!button) return;
-    if (isLoading) {
-        if (!button.dataset.originalText) {
-            button.dataset.originalText = button.textContent;
-        }
-        if (loadingText) {
-            button.textContent = loadingText;
-        }
+
+    if (isBusy) {
+        button.dataset.wasDisabled = button.disabled ? 'true' : 'false';
         button.disabled = true;
+        button.classList.add('is-loading');
     } else {
-        if (button.dataset.originalText) {
-            button.textContent = button.dataset.originalText;
-            delete button.dataset.originalText;
-        }
-        button.disabled = false;
+        button.classList.remove('is-loading');
+        button.disabled = button.dataset.wasDisabled === 'true';
+        delete button.dataset.wasDisabled;
     }
 }
 
@@ -58,8 +113,8 @@ function setActiveAuthTab(target) {
 
     toggleClass(signinTab, 'active', isSignin);
     toggleClass(signupTab, 'active', !isSignin);
-    if (signinTab) signinTab.setAttribute('aria-selected', isSignin ? 'true' : 'false');
-    if (signupTab) signupTab.setAttribute('aria-selected', isSignin ? 'false' : 'true');
+    signinTab?.setAttribute('aria-selected', isSignin ? 'true' : 'false');
+    signupTab?.setAttribute('aria-selected', isSignin ? 'false' : 'true');
     toggleClass(signinForm, 'auth-hidden', !isSignin);
     toggleClass(signupForm, 'auth-hidden', isSignin);
     setAuthError('');
@@ -72,174 +127,175 @@ function showAuthModal() {
     $('signin-form')?.reset();
     $('signup-form')?.reset();
     setActiveAuthTab('signin');
+    setTimeout(() => $('signin-email')?.focus(), 0);
 }
 
 function hideAuthModal() {
-    const modal = $('auth-modal');
-    if (!modal) return;
-    modal.classList.add('auth-hidden');
+    $('auth-modal')?.classList.add('auth-hidden');
     setAuthError('');
 }
 
 function showChangePasswordModal() {
-    if (!mockAuthEnabled) return;
-    const modal = $('change-password-modal');
-    if (!modal) return;
+    if (!launcherState.mockAuthEnabled) return;
     $('change-password-form')?.reset();
     setAuthError('', 'change-password-error');
-    modal.classList.remove('auth-hidden');
-    const input = $('current-password-input');
-    if (input) {
-        setTimeout(() => input.focus(), 0);
-    }
+    $('change-password-modal')?.classList.remove('auth-hidden');
+    setTimeout(() => $('current-password-input')?.focus(), 0);
 }
 
 function hideChangePasswordModal() {
-    const modal = $('change-password-modal');
-    if (!modal) return;
-    modal.classList.add('auth-hidden');
+    $('change-password-modal')?.classList.add('auth-hidden');
     setAuthError('', 'change-password-error');
 }
 
 function updateSessionEmail(email) {
-    currentSessionEmail = email || '';
-    const sessionContainer = $('user-session');
+    launcherState.currentSessionEmail = email || '';
+    const container = $('user-session');
     const emailLabel = $('session-email');
-    if (!sessionContainer || !emailLabel) return;
-    if (!mockAuthEnabled || !currentSessionEmail) {
-        sessionContainer.classList.add('hidden');
-        emailLabel.textContent = '';
-    } else {
-        emailLabel.textContent = currentSessionEmail;
-        sessionContainer.classList.remove('hidden');
-    }
+    if (!container || !emailLabel) return;
+
+    const shouldShow = Boolean(
+        launcherState.mockAuthEnabled && launcherState.currentSessionEmail
+    );
+    container.classList.toggle('hidden', !shouldShow);
+    emailLabel.textContent = shouldShow ? launcherState.currentSessionEmail : '';
 }
 
 async function handleSignIn(event) {
     event.preventDefault();
-    if (!mockAuthEnabled) {
+    if (!launcherState.mockAuthEnabled) {
         hideAuthModal();
         await ensureLauncherInitialized();
         return;
     }
+
     const email = $('signin-email')?.value?.trim();
     const password = $('signin-password')?.value || '';
     if (!email || !password) {
-        setAuthError('Email and password are required');
+        setAuthError('Email and password are required.');
         return;
     }
-    setAuthError('');
+
     const button = $('signin-submit');
-    setButtonLoading(button, true, 'Signing In...');
+    setAuthError('');
+    setButtonBusy(button, true);
     try {
         const result = await window.electron.auth.signin({ email, password });
-        if (result?.success) {
-            await refreshAuthStatus();
-        } else {
-            setAuthError(result?.error || 'Unable to sign in');
+        if (!result?.success) {
+            throw new Error(result?.error || 'Unable to sign in.');
         }
+        await refreshAuthStatus();
     } catch (error) {
-        setAuthError(error?.message || 'Unable to sign in');
+        setAuthError(asErrorMessage(error, 'Unable to sign in.'));
     } finally {
-        setButtonLoading(button, false);
+        setButtonBusy(button, false);
     }
 }
 
 async function handleSignUp(event) {
     event.preventDefault();
-    if (!mockAuthEnabled) {
+    if (!launcherState.mockAuthEnabled) {
         hideAuthModal();
         await ensureLauncherInitialized();
         return;
     }
+
     const email = $('signup-email')?.value?.trim();
     const password = $('signup-password')?.value || '';
     if (!email || !password) {
-        setAuthError('Email and password are required');
+        setAuthError('Email and password are required.');
         return;
     }
     if (password.length < 8) {
         setAuthError('Password must be at least 8 characters.');
         return;
     }
-    setAuthError('');
+
     const button = $('signup-submit');
-    setButtonLoading(button, true, 'Creating Account...');
+    setAuthError('');
+    setButtonBusy(button, true);
     try {
         const result = await window.electron.auth.signup({ email, password });
-        if (result?.success) {
-            await refreshAuthStatus();
-        } else {
-            setAuthError(result?.error || 'Unable to create account');
+        if (!result?.success) {
+            throw new Error(result?.error || 'Unable to create account.');
         }
+        await refreshAuthStatus();
     } catch (error) {
-        setAuthError(error?.message || 'Unable to create account');
+        setAuthError(asErrorMessage(error, 'Unable to create account.'));
     } finally {
-        setButtonLoading(button, false);
+        setButtonBusy(button, false);
     }
 }
 
 async function handleSignOut() {
-    if (!mockAuthEnabled) return;
+    if (!launcherState.mockAuthEnabled) return;
     const button = $('signout-btn');
-    setButtonLoading(button, true, 'Signing Out...');
+    setButtonBusy(button, true);
     try {
         const result = await window.electron.auth.signout();
-        if (result?.success) {
-            await refreshAuthStatus();
-        } else if (result?.error) {
-            window.electron.errorAlert(result.error);
+        if (!result?.success) {
+            throw new Error(result?.error || 'Unable to sign out.');
         }
+        await refreshAuthStatus();
     } catch (error) {
-        window.electron.errorAlert(error?.message || 'Unable to sign out.');
+        await showBlockingError(error, 'Unable to sign out.');
     } finally {
-        setButtonLoading(button, false);
+        setButtonBusy(button, false);
         hideChangePasswordModal();
     }
 }
 
 async function handleChangePassword(event) {
     event.preventDefault();
-    if (!mockAuthEnabled) return;
+    if (!launcherState.mockAuthEnabled) return;
+
     const currentPassword = $('current-password-input')?.value || '';
     const newPassword = $('change-password-input')?.value || '';
-
     if (!currentPassword) {
         setAuthError('Current password is required.', 'change-password-error');
         return;
     }
     if (newPassword.length < 8) {
-        setAuthError('New password must be at least 8 characters.', 'change-password-error');
+        setAuthError(
+            'New password must be at least 8 characters.',
+            'change-password-error'
+        );
         return;
     }
-    setAuthError('', 'change-password-error');
+
     const button = $('change-password-submit');
-    setButtonLoading(button, true, 'Saving...');
+    setAuthError('', 'change-password-error');
+    setButtonBusy(button, true);
     try {
         const result = await window.electron.auth.changePassword({
             currentPassword,
             newPassword
         });
-        if (result?.success) {
-            $('change-password-form')?.reset();
-            setAuthError('Password updated successfully.', 'change-password-error', true);
-            setTimeout(() => {
-                hideChangePasswordModal();
-                setAuthError('', 'change-password-error');
-            }, 1200);
-        } else if (result?.error) {
-            setAuthError(result.error, 'change-password-error');
+        if (!result?.success) {
+            throw new Error(result?.error || 'Unable to change password.');
         }
+        $('change-password-form')?.reset();
+        setAuthError(
+            'Password updated successfully.',
+            'change-password-error',
+            true
+        );
+        showToast('Password updated successfully.', 'success');
+        setTimeout(hideChangePasswordModal, 1100);
     } catch (error) {
-        setAuthError(error?.message || 'Unable to change password.', 'change-password-error');
+        setAuthError(
+            asErrorMessage(error, 'Unable to change password.'),
+            'change-password-error'
+        );
     } finally {
-        setButtonLoading(button, false);
+        setButtonBusy(button, false);
     }
 }
 
 function setupAuthUI() {
-    if (authUiReady) return;
-    authUiReady = true;
+    if (launcherState.authUiReady) return;
+    launcherState.authUiReady = true;
+
     $('signin-form')?.addEventListener('submit', handleSignIn);
     $('signup-form')?.addEventListener('submit', handleSignUp);
     $('auth-tab-signin')?.addEventListener('click', () => setActiveAuthTab('signin'));
@@ -252,15 +308,15 @@ function setupAuthUI() {
 }
 
 async function refreshAuthStatus() {
-    let status = null;
+    let status;
     try {
         status = await window.electron.auth.status();
     } catch (error) {
         status = { authenticated: true, mock: false };
     }
 
-    mockAuthEnabled = Boolean(status?.mock);
-    if (!mockAuthEnabled) {
+    launcherState.mockAuthEnabled = Boolean(status?.mock);
+    if (!launcherState.mockAuthEnabled) {
         hideAuthModal();
         hideChangePasswordModal();
         updateSessionEmail(status?.user?.email || '');
@@ -278,175 +334,192 @@ async function refreshAuthStatus() {
     }
 }
 
-async function ensureLauncherInitialized() {
-    if (launcherInitialized) return;
-    launcherInitialized = true;
-    await initializeLauncher();
+function showProgress(status = 'Checking local files…') {
+    const overlay = $('loader-container');
+    if (!overlay) return;
+    updateProgress(0, status);
+    overlay.classList.add('is-visible');
 }
 
-/**
- * Properties object used for client versioning, etc.
- * @typedef {{client: string, launcher_html: string, launcher: string, version_pref: string}} CupidBotProperties
- */
+function hideProgress() {
+    $('loader-container')?.classList.remove('is-visible');
+}
 
-async function openClient() {
-    const clientValue = document.getElementById('client').value;
-
-    // Check if a valid client version is selected
-    if (
-        !clientValue ||
-        clientValue === '' ||
-        !clientValue.includes('cupidbot-')
-    ) {
-        window.electron.errorAlert('Please select a valid client version');
-        return;
+function updateProgress(percent, status) {
+    const progressBar = $('progress-bar');
+    const statusText = $('status');
+    const normalized = Math.max(0, Math.min(100, Number(percent) || 0));
+    if (progressBar) {
+        progressBar.style.width = `${normalized}%`;
+        progressBar.textContent = `${normalized}%`;
     }
-
-    const version = extractVersion(clientValue);
-
-    const result = await downloadClientIfNotExist(version);
-    if (!result.exists) return;
-
-    const proxy = getProxyValues();
-    const ramPreference = getClientRamPreference();
-
-    document.getElementById('loader-container').style.display = 'none';
-
-    // Get the select element by its ID
-    const selectElement = document.getElementById('character');
-
-    // Get the selected value
-    const selectedValue = selectElement.value;
-
-    const selectedAccount = accounts?.find(
-        (x) => x.accountId === selectedValue
-    );
-    if (selectedAccount) {
-        try {
-            const result = await window.electron.updateClientJarTTL(version);
-            if (result?.error) {
-                window.electron.logError(result.error);
-            }
-            await window.electron.overwriteCredentialProperties(
-                selectedAccount
-            );
-            const launchResult = await window.electron.openClient(
-                version,
-                proxy,
-                selectedAccount,
-                ramPreference
-            );
-            if (launchResult?.error) {
-                window.electron.errorAlert(launchResult.error);
-            }
-        } catch (err) {
-            window.electron.errorAlert(err?.message || String(err));
-        }
-    } else {
-        alert('Account not found. Please restart your client.');
+    if (statusText && status) {
+        statusText.textContent = status;
     }
 }
 
-window.electron.ipcRenderer.receive('progress', (event, data) => {
+window.electron.ipcRenderer.receive('progress', (_event, data) => {
     if (data) {
         updateProgress(data.percent, data.status);
     }
 });
 
-function updateProgress(percent, status) {
-    const progressBar = document.getElementById('progress-bar');
-    const statusText = document.getElementById('status');
-
-    progressBar.style.width = percent + '%';
-    progressBar.textContent = percent + '%';
-    statusText.textContent = status;
-}
-
 function setTextContent(elementId, value) {
-    const element = document.getElementById(elementId);
-    if (!element) {
-        return;
+    const element = $(elementId);
+    if (element) {
+        element.textContent = value;
     }
-
-    element.textContent = value;
 }
 
-function formatInstalledClientStatus(installedClientJars) {
-    if (!Array.isArray(installedClientJars) || installedClientJars.length === 0) {
-        return 'No local CupidBot jars found in ~/.cupidbot.';
+function formatInstalledClientStatus(jars) {
+    if (!Array.isArray(jars) || jars.length === 0) {
+        return 'No local clients found';
     }
-
-    if (installedClientJars.length === 1) {
-        return `1 local jar available: ${installedClientJars[0]}`;
+    if (jars.length === 1) {
+        return jars[0];
     }
-
-    return `${installedClientJars.length} local jars available. Choose one from the Version list.`;
+    return `${jars.length} versions available`;
 }
 
-function updateLauncherInfoPanel(update = {}) {
-    const { launcherVersion, clientVersion, installedClientJars } = update;
+function syncReadiness() {
+    const hasClient = launcherState.jars.length > 0;
+    const header = $('header-readiness');
+    const badge = $('readiness-state');
+    const card = document.querySelector('.readiness-card');
 
-    if (Object.prototype.hasOwnProperty.call(update, 'launcherVersion')) {
-        setTextContent(
-            'launcher-version-status',
-            launcherVersion
-                ? `Launcher ${launcherVersion}`
-                : 'Launcher version unavailable.'
-        );
+    if (header) {
+        header.classList.remove('is-checking', 'is-ready', 'is-attention', 'is-error');
+        header.classList.add(hasClient ? 'is-ready' : 'is-attention');
     }
+    if (badge) {
+        badge.classList.remove('is-checking', 'is-ready', 'is-attention', 'is-error');
+        badge.classList.add(hasClient ? 'is-ready' : 'is-attention');
+        badge.textContent = hasClient ? 'Ready' : 'Client needed';
+    }
+    card?.classList.toggle('has-no-client', !hasClient);
 
-    if (Object.prototype.hasOwnProperty.call(update, 'clientVersion')) {
-        setTextContent(
-            'client-version-status',
-            clientVersion && clientVersion !== '0.0.0'
-                ? `Latest local client target: ${clientVersion}`
-                : 'No local client target is configured yet.'
-        );
-    }
+    setTextContent(
+        'header-readiness-label',
+        hasClient ? 'Local client ready' : 'Local client required'
+    );
+    setTextContent(
+        'launcher-version-status',
+        launcherState.launcherVersion
+            ? `v${launcherState.launcherVersion}`
+            : 'Version unavailable'
+    );
+    setTextContent(
+        'client-version-status',
+        launcherState.clientVersion && launcherState.clientVersion !== '0.0.0'
+            ? `v${launcherState.clientVersion}`
+            : 'Not configured'
+    );
+    setTextContent(
+        'installed-client-status',
+        formatInstalledClientStatus(launcherState.jars)
+    );
+}
 
-    if (Object.prototype.hasOwnProperty.call(update, 'installedClientJars')) {
-        setTextContent(
-            'installed-client-status',
-            formatInstalledClientStatus(installedClientJars)
-        );
+function getSelectedIdentity() {
+    return $('character')?.value || NORMAL_IDENTITY;
+}
+
+function getSelectedAccount() {
+    const identityId = getSelectedIdentity();
+    return (
+        launcherState.accounts.find(
+            (account) => account?.accountId === identityId
+        ) || null
+    );
+}
+
+function getSelectedClientFile() {
+    return $('client')?.value || '';
+}
+
+function getSelectedClientVersion() {
+    return extractVersion(getSelectedClientFile());
+}
+
+function getIdentityLabel() {
+    const account = getSelectedAccount();
+    return account ? getAccountLabel(account) : 'Normal account';
+}
+
+function syncLaunchSummary() {
+    const profile = $('profile')?.value || 'default';
+    const version = getSelectedClientVersion();
+    const memory = formatRamLabel(getClientRamPreference());
+    const summary = [
+        getIdentityLabel(),
+        profile === 'default' ? 'Default profile' : profile,
+        version ? `v${version}` : 'No client',
+        memory
+    ].join(' · ');
+    setTextContent('launch-summary', summary);
+}
+
+function syncAdvancedSettingsSummary() {
+    const memory = formatRamLabel(getClientRamPreference());
+    const hasProxy = Boolean($('proxy-ip')?.value?.trim());
+    setTextContent(
+        'advanced-settings-summary',
+        `${memory} memory · ${hasProxy ? 'SOCKS proxy set' : 'No proxy'}`
+    );
+}
+
+function syncLaunchState() {
+    const button = $('launch-client');
+    if (!button || !window.CupidLauncherUI) return;
+
+    const view = window.CupidLauncherUI.deriveLaunchState({
+        accounts: launcherState.accounts,
+        identityId: getSelectedIdentity(),
+        jars: launcherState.jars,
+        busy: launcherState.launchBusy
+    });
+    const label = button.querySelector('span');
+    if (label) {
+        label.textContent = view.label;
     }
+    button.disabled = !view.enabled;
+    button.classList.toggle('is-loading', launcherState.launchBusy);
+
+    if (view.reason) {
+        setLaunchMessage(view.reason, 'error');
+    }
+    syncLaunchSummary();
 }
 
 function formatUpdateEntryMeta(entry) {
-    return [entry.date, entry.area, entry.commit]
-        .filter(Boolean)
-        .join(' - ');
+    return [entry.date, entry.area, entry.commit].filter(Boolean).join(' · ');
 }
 
 function renderRecentUpdates(entries = []) {
-    const list = document.getElementById('recent-updates-list');
-    if (!list) {
-        return;
-    }
+    const list = $('recent-updates-list');
+    if (!list) return;
 
     const validEntries = Array.isArray(entries)
-        ? entries.filter((entry) => entry && entry.summary).slice(0, 5)
+        ? entries.filter((entry) => entry?.summary).slice(0, 3)
         : [];
+    list.innerHTML = '';
 
     if (validEntries.length === 0) {
-        list.innerHTML = '';
         const item = document.createElement('li');
         const title = document.createElement('strong');
         const meta = document.createElement('span');
-        title.textContent = 'No update log entries yet.';
-        meta.textContent = 'The launcher will show committed updates here.';
+        title.textContent = 'No update entries yet.';
+        meta.textContent = 'Committed launcher updates will appear here.';
         item.append(title, meta);
         list.appendChild(item);
         return;
     }
 
-    list.innerHTML = '';
     validEntries.forEach((entry) => {
         const item = document.createElement('li');
         const title = document.createElement('strong');
         const meta = document.createElement('span');
         title.textContent = entry.summary;
-        meta.className = 'recent-update-meta';
         meta.textContent = formatUpdateEntryMeta(entry);
         item.append(title, meta);
         list.appendChild(item);
@@ -454,424 +527,184 @@ function renderRecentUpdates(entries = []) {
 }
 
 async function loadRecentUpdates() {
-    if (!window.electron?.readUpdateLog) {
-        return;
-    }
-
     try {
         const result = await window.electron.readUpdateLog();
         if (result?.success) {
             renderRecentUpdates(result.entries);
         } else if (result?.error) {
-            window.electron.logError(result.error);
+            logError(result.error);
         }
     } catch (error) {
-        window.electron.logError(error?.message || String(error));
+        logError(error);
     }
 }
 
-function reportAccountsError(message) {
-    if (!message) {
-        return;
-    }
-
-    if (lastAccountsReadError === message) {
-        window.electron?.logError?.(message);
-        return;
-    }
-
-    lastAccountsReadError = message;
-    window.electron?.errorAlert?.(message);
+function sortAccounts(accounts) {
+    if (!Array.isArray(accounts)) return [];
+    return [...accounts].sort((a, b) => {
+        const nameA = getAccountLabel(a).toLowerCase();
+        const nameB = getAccountLabel(b).toLowerCase();
+        return nameA.localeCompare(nameB);
+    });
 }
 
-async function safeReadAccounts() {
-    const result = await window.electron.readAccounts();
-    if (result?.error) {
-        reportAccountsError(`Failed to load accounts: ${result.error}`);
-        return null;
-    }
+function getAccountLabel(account) {
+    const displayName = account?.displayName?.toString().trim();
+    return displayName || account?.accountId?.toString() || 'Unnamed character';
+}
 
-    if (!Array.isArray(result)) {
-        reportAccountsError('Accounts data is in an unexpected format.');
-        return null;
-    }
-
-    lastAccountsReadError = null;
-    // Sort alphabetically by displayName (case-insensitive); fallback to accountId
+async function safeReadAccounts({ quiet = false } = {}) {
     try {
-        result.sort((a, b) => {
-            const nameA = (a?.displayName || a?.accountId || '').toString().trim().toLowerCase();
-            const nameB = (b?.displayName || b?.accountId || '').toString().trim().toLowerCase();
-            if (nameA < nameB) return -1;
-            if (nameA > nameB) return 1;
-            return 0;
-        });
-    } catch (_) {
-        // Ignore sort errors
-    }
-    return result;
-}
-
-/**
- * Gets the selected client version from the UI.
- * @returns {string} The selected client version string.
- */
-function getSelectedClientVersion() {
-    const clientSelect = document.getElementById('client');
-    return extractVersion(clientSelect.value);
-}
-
-/**
- * Handles the play button click event of Jagex account
- */
-async function playButtonClickHandler() {
-    await checkForOutdatedLaunch();
-    const playBtn = document.getElementById('play');
-
-    if (
-        playBtn?.innerText.toLowerCase() ===
-        'Play With Jagex Account'.toLowerCase()
-    ) {
-        await openClient();
-    } else {
-        playBtn?.classList.add('disabled');
-        try {
-            const authResult = await window.electron.startAuthFlow();
-            if (authResult?.error) {
-                window.electron.errorAlert(authResult.error);
-            }
-        } catch (err) {
-            window.electron.errorAlert(err?.message || String(err));
-        } finally {
-            playBtn?.classList.remove('disabled');
-        }
-    }
-}
-
-/**
- * Helper function to update character select and trigger profile update
- * @param {string} accountId - The account ID to select
- * @param {{suppressRender?: boolean}} [options] - Optional flags
- * @returns {void}
- */
-function updateCharacterSelection(accountId, options = {}) {
-    const characterSelect = document.getElementById('character');
-    if (characterSelect) {
-        characterSelect.value = accountId;
-        // Manually dispatch a change event to trigger the onChange handler
-        const changeEvent = new Event('change');
-        characterSelect.dispatchEvent(changeEvent);
-    }
-
-    if (!options?.suppressRender) {
-        renderAccountsList();
-    }
-}
-
-async function handleJagexAccountLogic(properties) {
-    setInterval(async () => {
-        const hasChanged = await window.electron.checkFileChange();
-        if (hasChanged) {
-            const oldNumberOfAccounts = accounts.length;
-            const latestAccounts = await safeReadAccounts();
-            if (!latestAccounts) {
-                return;
-            }
-            accounts = latestAccounts;
-            const newNumberOfAccounts = accounts.length;
-
-            const selectedProfile = document.getElementById('profile')?.value;
-            const selectedCharacter =
-                document.getElementById('character')?.value;
-
-            // If accounts were deleted externally, ensure UI is updated properly
-            if (oldNumberOfAccounts > 0 && newNumberOfAccounts === 0) {
-                window.electron.logError(
-                    'All accounts were removed externally'
-                );
-                // Force UI update for removed accounts
-                document.getElementById('play').innerHTML =
-                    'Login Jagex Account';
-            }
-
-            await setupSidebarLayout(accounts.length);
-
-            const orderedClientJars = await orderClientJarsByVersion();
-            updateLauncherInfoPanel({ installedClientJars: orderedClientJars });
-            populateSelectElement('client', orderedClientJars);
-            populateProfileSelector(
-                await window.electron.listProfiles(),
-                selectedProfile
-            );
-            await setVersionPreference(properties);
-
-            if (newNumberOfAccounts === 0) {
-                /**
-                 * All accounts were removed
-                 * Profile will be updated by setupSidebarLayout
-                 * which calls populateAccountSelector with empty accounts
-                 */
-                await updateProfileBasedOnCharacter();
-            } else if (oldNumberOfAccounts !== newNumberOfAccounts) {
-                const latestAccount = accounts[0];
-                if (latestAccount) {
-                    updateCharacterSelection(latestAccount.accountId);
-                }
-            } else {
-                // Check if the selectedCharacter still exists in the accounts array
-                const characterExists = accounts.some(
-                    (acc) => acc.accountId === selectedCharacter
-                );
-                if (characterExists) {
-                    updateCharacterSelection(selectedCharacter);
-                } else if (accounts.length > 0) {
-                    // If character no longer exists but there are accounts, select the first one
-                    window.electron.logError(
-                        'Selected character no longer exists, selecting first available'
-                    );
-                    updateCharacterSelection(accounts[0].accountId);
-                }
-            }
-            // Attempt to restore persisted selection after any file change
-            await restoreSelectedAccountIfAny();
-        }
-    }, 1000);
-}
-
-window.onerror = function myErrorHandler(errorMsg) {
-    alert(`Error occurred: ${errorMsg}`);
-    window.electron.logError(errorMsg);
-    return false;
-};
-window.addEventListener('error', function (e) {
-    if (e.error) {
-        alert(`Error occurred: ${e.error.stack}`);
-        window.electron.logError(e.error.stack);
-    } else if (e.reason) {
-        alert(`Error occurred: ${e.reason.stack}`);
-        window.electron.logError(e.reason.stack);
-    }
-    return false;
-});
-
-window.addEventListener('unhandledrejection', (e) => {
-    e.preventDefault();
-    alert(`Error occurred: ${e.reason.stack}`);
-    window.electron.logError(e.reason.stack);
-});
-
-async function initializeLauncher() {
-    await loadRecentUpdates();
-
-    const properties = await window.electron.readProperties();
-
-    const clientVersion = await window.electron.fetchClientVersion();
-
-    const cupidbotLauncherVersion = await window.electron.launcherVersion();
-
-    document.title = 'CupidBot Launcher - ' + cupidbotLauncherVersion;
-    updateLauncherInfoPanel({
-        launcherVersion: cupidbotLauncherVersion,
-        clientVersion
-    });
-
-    if (properties['client'] === '0.0.0' && clientVersion !== '0.0.0') {
-        document.getElementById('loader-container').style.display = 'block';
-        const result = await window.electron.downloadClient(clientVersion);
+        const result = await window.electron.readAccounts();
         if (result?.error) {
-            window.electron.errorAlert(result.error);
-            properties['client'] = '0.0.0';
-        } else {
-            properties['client'] = clientVersion;
+            throw new Error(result.error);
         }
-    }
-
-    document.getElementById('loader-container').style.display = 'none';
-
-    await window.electron.writeProperties(properties);
-
-    const result = await window.electron.cleanUnusedClients(clientVersion);
-    if (result?.error) {
-        window.electron.logError(result.error);
-    }
-
-    /*
-     * Whenever the profile select changes, we set the "preferred" profile on accounts.json
-     * for the current selected account, if no jagex account is selected, we set on
-     * the non-jagex-preferred-profile.json
-     */
-    document
-        .getElementById('profile')
-        .addEventListener('change', async (event) => {
-            const selectedProfile = event.target.value;
-            const selectedAccount = document.getElementById('character')?.value;
-            if (selectedAccount && selectedAccount !== 'none') {
-                await window.electron.setProfileJagexAccount(
-                    selectedAccount,
-                    selectedProfile
-                );
-            } else {
-                await window.electron.setProfileNoJagexAccount(selectedProfile);
+        if (!Array.isArray(result)) {
+            throw new Error('Accounts data is in an unexpected format.');
+        }
+        launcherState.lastAccountsReadError = null;
+        return sortAccounts(result);
+    } catch (error) {
+        const message = `Unable to read Jagex accounts: ${asErrorMessage(error)}`;
+        if (launcherState.lastAccountsReadError !== message) {
+            launcherState.lastAccountsReadError = message;
+            logError(message);
+            if (!quiet) {
+                showToast(message, 'error');
             }
-        });
-
-    /*
-     * Whenever the character select changes, we attempt to set the "preferred" profile
-     * for the selected account if it exists, otherwise we set the profile
-     * to the default
-     */
-    document
-        .getElementById('character')
-        .addEventListener('change', async (event) => {
-            const selectedAccount = event.target.value;
-            const latestAccounts = await safeReadAccounts();
-            if (latestAccounts) {
-                accounts = latestAccounts;
-            }
-            const accountsData = latestAccounts ?? accounts;
-
-            if (selectedAccount && selectedAccount !== 'none') {
-                const account = accountsData.find(
-                    (x) => x.accountId === selectedAccount
-                );
-                if (account) {
-                    const profile = account.profile || 'default';
-                    document.getElementById('profile').value = profile;
-                }
-            } else {
-                // If no account is selected, set the profile to the preferred non-Jagex account profile
-                // If no profile is set, default to "default"
-                const nonJagexProfile =
-                    await window.electron.readNonJagexProfile();
-                const profile = nonJagexProfile || 'default';
-                document.getElementById('profile').value = profile;
-            }
-            if (!restoringSelectedAccount) {
-                await persistSelectedAccount(selectedAccount);
-            }
-        });
-
-    //Init buttons and UI
-    await initUI(properties);
-
-    await checkForClientUpdate(properties);
-
-    iii = setInterval(async () => {
-        const properties = await window.electron.readProperties();
-        await checkForClientUpdate(properties);
-    }, 5 * 60 * 1000); // 5 minutes
-
-    await handleJagexAccountLogic(properties);
-
-    document.querySelectorAll('.loadingButton').forEach((button) => {
-        button.addEventListener('click', startLoading);
-    });
-
-    loadLandingPageWebview();
-}
-
-window.addEventListener('load', async () => {
-    setupAuthUI();
-    await refreshAuthStatus();
-});
-
-function populateSelectElement(selectId, options) {
-    const selectElement = document.getElementById(selectId);
-
-    // Clear any existing options
-    selectElement.innerHTML = '';
-
-    // Add each option from the array to the select element
-    options.forEach((optionText) => addSelectElement(selectId, optionText));
-}
-
-function addSelectElement(selectId, option) {
-    // Get the select element by its ID
-    const selectElement = document.getElementById(selectId);
-
-    // Create a new option element
-    const newOption = document.createElement('option');
-
-    // Set the value and text of the new option
-    newOption.value = option;
-    newOption.text = option;
-
-    // Add the new option to the select element
-    selectElement.appendChild(newOption);
-}
-
-function populateProfileSelector(profiles = [], selectedProfile = null) {
-    // Get the select element by its ID
-    const profileSelect = document.getElementById('profile');
-
-    // Clear any existing options (optional)
-    profileSelect.innerHTML = '';
-
-    // Create a default "default" option
-    const defaultOption = document.createElement('option');
-    defaultOption.value = 'default';
-    defaultOption.textContent = 'Default';
-    profileSelect.appendChild(defaultOption);
-
-    // Only try to populate if profiles are available and not empty
-    if (Array.isArray(profiles) && profiles.length > 0) {
-        profiles.forEach((profile) => {
-            addSelectElement('profile', profile);
-        });
-    }
-
-    if (selectedProfile) {
-        profileSelect.value = selectedProfile;
+        }
+        return null;
     }
 }
 
-function populateAccountSelector(characters = [], selectedAccount = null) {
-    // Get the select element by its ID
-    const characterSelect = document.getElementById('character');
+function populateAccountSelector(selectedIdentity = NORMAL_IDENTITY) {
+    const select = $('character');
+    if (!select) return;
+    select.innerHTML = '';
 
-    // Clear any existing options (optional)
-    characterSelect.innerHTML = '';
+    const normalOption = document.createElement('option');
+    normalOption.value = NORMAL_IDENTITY;
+    normalOption.textContent = 'Normal account';
+    select.appendChild(normalOption);
 
-    // Create a default "none" option
-    const defaultOption = document.createElement('option');
-    defaultOption.value = 'none';
-    defaultOption.textContent = 'None';
-    characterSelect.appendChild(defaultOption);
-
-    // Iterate over the characters array and create option elements
-    characters.forEach((character) => {
+    launcherState.accounts.forEach((account) => {
+        if (!account?.accountId) return;
         const option = document.createElement('option');
-        option.value = character.accountId; // Set sessionId as the value
-        option.textContent = character.displayName; // Set displayName as the text
-        characterSelect.appendChild(option); // Add the option to the select element
+        option.value = account.accountId;
+        option.textContent = getAccountLabel(account);
+        select.appendChild(option);
     });
 
-    if (selectedAccount) {
-        updateCharacterSelection(selectedAccount, { suppressRender: true });
+    select.value = window.CupidLauncherUI.resolveIdentity(
+        launcherState.accounts,
+        selectedIdentity
+    );
+}
+
+function ensureProfileOption(profile) {
+    const select = $('profile');
+    if (!select || !profile) return;
+    const exists = Array.from(select.options).some(
+        (option) => option.value === profile
+    );
+    if (!exists) {
+        const option = document.createElement('option');
+        option.value = profile;
+        option.textContent = profile;
+        select.appendChild(option);
+    }
+}
+
+async function readProfileForIdentity(identityId) {
+    if (identityId !== NORMAL_IDENTITY) {
+        const account = launcherState.accounts.find(
+            (item) => item.accountId === identityId
+        );
+        return account?.profile || 'default';
+    }
+
+    try {
+        const result = await window.electron.readNonJagexProfile();
+        return typeof result === 'string' && result ? result : 'default';
+    } catch (error) {
+        logError(error);
+        return 'default';
+    }
+}
+
+async function persistSelectedIdentity(identityId) {
+    try {
+        const properties = (await window.electron.readProperties()) || {};
+        if (properties.selected_account !== identityId) {
+            properties.selected_account = identityId;
+            await window.electron.writeProperties(properties);
+        }
+    } catch (error) {
+        logError(`Unable to remember selected identity: ${asErrorMessage(error)}`);
+    }
+}
+
+async function selectIdentity(
+    requestedIdentity,
+    { persist = true, announce = false } = {}
+) {
+    const epoch = ++launcherState.selectionEpoch;
+    const identityId = window.CupidLauncherUI.resolveIdentity(
+        launcherState.accounts,
+        requestedIdentity
+    );
+
+    if ($('character')) {
+        $('character').value = identityId;
+    }
+    const profile = await readProfileForIdentity(identityId);
+    if (epoch !== launcherState.selectionEpoch) return identityId;
+
+    ensureProfileOption(profile);
+    if ($('profile')) {
+        $('profile').value = profile;
+    }
+    if (persist) {
+        await persistSelectedIdentity(identityId);
+    }
+
+    if (!launcherState.launchBusy) {
+        setLaunchMessage('');
+    }
+    renderAccountsList();
+    syncAccountActions();
+    syncLaunchState();
+    if (announce) {
+        showToast(`${getIdentityLabel()} selected.`, 'success');
+    }
+    return identityId;
+}
+
+function syncAccountActions() {
+    const hasAccounts = launcherState.accounts.length > 0;
+    const refresh = $('refresh-accounts');
+    const removeAll = $('logout');
+    if (refresh) {
+        refresh.disabled = !hasAccounts || launcherState.accountActionBusy;
+    }
+    if (removeAll) {
+        removeAll.style.display = hasAccounts ? 'inline-flex' : 'none';
+        removeAll.disabled = launcherState.accountActionBusy;
     }
 }
 
 function renderAccountsList() {
-    const listContainer = document.getElementById(
-        'accounts-dropdown-container'
+    const container = $('accounts-dropdown-container');
+    if (!container) return;
+
+    launcherState.cleanupAccountsDropdownListeners?.();
+    launcherState.cleanupAccountsDropdownListeners = null;
+    container.innerHTML = '';
+
+    const selectedId = getSelectedIdentity();
+    const selectedAccount = launcherState.accounts.find(
+        (account) => account.accountId === selectedId
     );
-    if (!listContainer) {
-        return;
-    }
-
-    listContainer.innerHTML = '';
-
-    if (typeof cleanupAccountsDropdownListeners === 'function') {
-        cleanupAccountsDropdownListeners();
-        cleanupAccountsDropdownListeners = null;
-    }
-
-    if (!Array.isArray(accounts) || accounts.length === 0) {
-        listContainer.style.display = 'none';
-        return;
-    }
-
-    listContainer.style.display = 'block';
 
     const dropdown = document.createElement('div');
     dropdown.className = 'accounts-dropdown';
@@ -882,243 +715,170 @@ function renderAccountsList() {
     toggleButton.setAttribute('aria-haspopup', 'listbox');
     toggleButton.setAttribute('aria-expanded', 'false');
 
-    const toggleLabel = document.createElement('span');
-    toggleLabel.className = 'accounts-dropdown-label';
-
-    const toggleMeta = document.createElement('span');
-    toggleMeta.className = 'accounts-dropdown-meta';
-
     const toggleText = document.createElement('span');
     toggleText.className = 'accounts-dropdown-text';
+    const toggleMeta = document.createElement('span');
+    toggleMeta.className = 'accounts-dropdown-meta';
+    toggleMeta.textContent = selectedAccount
+        ? 'Selected Jagex character'
+        : 'Selected identity';
+    const toggleLabel = document.createElement('span');
+    toggleLabel.className = 'accounts-dropdown-label';
+    toggleLabel.textContent = selectedAccount
+        ? getAccountLabel(selectedAccount)
+        : 'Normal account';
     toggleText.append(toggleMeta, toggleLabel);
 
-    const countBadge = document.createElement('span');
-    countBadge.className = 'accounts-dropdown-count';
-    countBadge.textContent = String(accounts.length);
+    const count = document.createElement('span');
+    count.className = 'accounts-dropdown-count';
+    count.textContent = String(launcherState.accounts.length);
+    count.title = `${launcherState.accounts.length} saved Jagex character${
+        launcherState.accounts.length === 1 ? '' : 's'
+    }`;
 
-    const toggleIcon = document.createElement('span');
-    toggleIcon.className = 'accounts-dropdown-icon';
-    toggleIcon.setAttribute('aria-hidden', 'true');
-    toggleIcon.textContent = '\u25be';
-
-    const characterSelect = document.getElementById('character');
-    const initialSelectedValue = characterSelect?.value || 'none';
-    let currentSelectedValue = initialSelectedValue;
-
-    const getAccountLabel = (account) => {
-        const label = account?.displayName?.trim();
-        return label && label.length > 0 ? label : 'Not set';
-    };
-
-    const updateToggleLabel = (value) => {
-        if (value === 'none') {
-            toggleMeta.textContent = 'No Jagex account';
-            toggleLabel.textContent = 'None';
-            toggleButton.setAttribute('aria-label', 'No Jagex account selected');
-            toggleButton.title = 'No Jagex account selected';
-            return;
-        }
-
-        const matchingAccount = accounts.find(
-            (account) => account.accountId === value
-        );
-
-        if (matchingAccount) {
-            const label = getAccountLabel(matchingAccount);
-            toggleMeta.textContent = 'Selected account';
-            toggleLabel.textContent = label;
-            toggleButton.setAttribute('aria-label', `Selected ${label}`);
-            toggleButton.title = `Selected ${label}`;
-        } else {
-            toggleMeta.textContent = 'Jagex account';
-            toggleLabel.textContent = 'Select Jagex account';
-            toggleButton.setAttribute('aria-label', 'Select a Jagex account');
-            toggleButton.title = 'Select a Jagex account';
-        }
-    };
-
-    updateToggleLabel(currentSelectedValue);
-
-    toggleButton.append(toggleText, countBadge, toggleIcon);
+    const icon = document.createElement('span');
+    icon.className = 'accounts-dropdown-icon';
+    icon.textContent = '\u25be';
+    icon.setAttribute('aria-hidden', 'true');
+    toggleButton.append(toggleText, count, icon);
 
     const panel = document.createElement('div');
     panel.className = 'accounts-dropdown-panel';
-    panel.setAttribute('role', 'listbox');
 
-    const searchWrapper = document.createElement('div');
-    searchWrapper.className = 'accounts-search-wrapper';
-
-    const searchInput = document.createElement('input');
-    searchInput.type = 'text';
-    searchInput.className = 'accounts-search-input';
-    searchInput.placeholder = 'Search accounts…';
-    searchInput.setAttribute('aria-label', 'Search saved accounts');
-
-    searchWrapper.appendChild(searchInput);
+    let searchInput = null;
+    if (launcherState.accounts.length > 0) {
+        const searchWrapper = document.createElement('div');
+        searchWrapper.className = 'accounts-search-wrapper';
+        searchInput = document.createElement('input');
+        searchInput.className = 'accounts-search-input';
+        searchInput.type = 'search';
+        searchInput.placeholder = 'Search saved characters';
+        searchInput.setAttribute('aria-label', 'Search saved Jagex characters');
+        searchWrapper.appendChild(searchInput);
+        panel.appendChild(searchWrapper);
+    }
 
     const optionsList = document.createElement('div');
     optionsList.className = 'accounts-options';
+    optionsList.setAttribute('role', 'listbox');
+    optionsList.setAttribute('aria-label', 'Launch identities');
+    panel.appendChild(optionsList);
 
-    const emptyMessage = document.createElement('div');
-    emptyMessage.className = 'accounts-options-empty';
-    emptyMessage.textContent = 'No accounts match your search.';
-
-    const closeDropdown = () => {
+    const closeDropdown = ({ restoreFocus = false } = {}) => {
         dropdown.classList.remove('open');
         toggleButton.setAttribute('aria-expanded', 'false');
-        searchInput.value = '';
+        if (restoreFocus) {
+            toggleButton.focus();
+        }
     };
 
-    const setSelectedAccount = (value) => {
-        currentSelectedValue = value;
-        updateToggleLabel(value);
-        updateCharacterSelection(value, { suppressRender: true });
+    const focusOption = (direction) => {
+        const options = Array.from(
+            optionsList.querySelectorAll('.account-option-select')
+        );
+        if (options.length === 0) return;
+        const currentIndex = options.indexOf(document.activeElement);
+        let nextIndex;
+        if (direction === 'first') nextIndex = 0;
+        else if (direction === 'last') nextIndex = options.length - 1;
+        else if (direction === 'next') nextIndex = Math.min(options.length - 1, currentIndex + 1);
+        else nextIndex = Math.max(0, currentIndex - 1);
+        options[nextIndex].focus();
+    };
+
+    const chooseIdentity = async (identityId) => {
         closeDropdown();
-        toggleButton.focus();
+        await selectIdentity(identityId, { persist: true });
     };
 
-    const createNoneOption = () => {
-        const optionRow = document.createElement('div');
-        optionRow.className = 'account-option';
-        optionRow.setAttribute('role', 'option');
-        if (currentSelectedValue === 'none') {
-            optionRow.classList.add('selected');
-            optionRow.setAttribute('aria-selected', 'true');
-        } else {
-            optionRow.setAttribute('aria-selected', 'false');
-        }
-
-        const optionCheck = document.createElement('span');
-        optionCheck.className = 'account-option-check';
-        optionCheck.setAttribute('aria-hidden', 'true');
-        optionCheck.innerHTML = currentSelectedValue === 'none' ? '&#10003;' : '';
-
-        const optionContent = document.createElement('span');
-        optionContent.className = 'account-option-content';
-
-        const optionName = document.createElement('span');
-        optionName.className = 'account-option-name';
-        optionName.textContent = 'None';
-
-        const optionMeta = document.createElement('span');
-        optionMeta.className = 'account-option-meta';
-        optionMeta.textContent = 'Launch without Jagex account';
-
-        optionContent.append(optionName, optionMeta);
+    const createIdentityOption = (identity) => {
+        const isNormal = identity.id === NORMAL_IDENTITY;
+        const isSelected = identity.id === selectedId;
+        const row = document.createElement('div');
+        row.className = `account-option${isSelected ? ' selected' : ''}`;
 
         const selectButton = document.createElement('button');
         selectButton.type = 'button';
         selectButton.className = 'account-option-select';
-        selectButton.title = 'Use no Jagex account';
-        selectButton.append(optionCheck, optionContent);
-        selectButton.addEventListener('click', () => {
-            setSelectedAccount('none');
-        });
+        selectButton.setAttribute('role', 'option');
+        selectButton.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+        selectButton.tabIndex = -1;
 
-        optionRow.appendChild(selectButton);
-        return optionRow;
-    };
+        const check = document.createElement('span');
+        check.className = 'account-option-check';
+        check.textContent = isSelected ? '\u2713' : '';
+        check.setAttribute('aria-hidden', 'true');
 
-    const createAccountOption = (account) => {
-        const optionRow = document.createElement('div');
-        optionRow.className = 'account-option';
-        optionRow.setAttribute('role', 'option');
-        optionRow.dataset.accountId = account.accountId;
+        const content = document.createElement('span');
+        content.className = 'account-option-content';
+        const name = document.createElement('span');
+        name.className = 'account-option-name';
+        name.textContent = identity.label;
+        const meta = document.createElement('span');
+        meta.className = 'account-option-meta';
+        meta.textContent = isNormal
+            ? 'Launch without Jagex credentials'
+            : 'Saved Jagex character';
+        content.append(name, meta);
+        selectButton.append(check, content);
+        selectButton.addEventListener('click', () => chooseIdentity(identity.id));
+        row.appendChild(selectButton);
 
-        if (account.accountId === currentSelectedValue) {
-            optionRow.classList.add('selected');
-            optionRow.setAttribute('aria-selected', 'true');
-        } else {
-            optionRow.setAttribute('aria-selected', 'false');
+        if (!isNormal) {
+            const deleteButton = document.createElement('button');
+            deleteButton.type = 'button';
+            deleteButton.className = 'account-option-delete';
+            deleteButton.setAttribute('aria-label', `Remove ${identity.label}`);
+            deleteButton.title = `Remove ${identity.label}`;
+            deleteButton.textContent = '\u00d7';
+            deleteButton.addEventListener('click', (event) => {
+                event.stopPropagation();
+                handleAccountDelete(identity.id);
+            });
+            row.appendChild(deleteButton);
         }
 
-        const label = getAccountLabel(account);
-
-        const optionCheck = document.createElement('span');
-        optionCheck.className = 'account-option-check';
-        optionCheck.setAttribute('aria-hidden', 'true');
-        optionCheck.innerHTML = account.accountId === currentSelectedValue ? '&#10003;' : '';
-
-        const optionContent = document.createElement('span');
-        optionContent.className = 'account-option-content';
-
-        const optionName = document.createElement('span');
-        optionName.className = 'account-option-name';
-        optionName.textContent = label;
-
-        const optionMeta = document.createElement('span');
-        optionMeta.className = 'account-option-meta';
-        optionMeta.textContent = account.profile
-            ? `Profile: ${account.profile}`
-            : 'Profile: Default';
-
-        optionContent.append(optionName, optionMeta);
-
-        const selectButton = document.createElement('button');
-        selectButton.type = 'button';
-        selectButton.className = 'account-option-select';
-        selectButton.title = `Select ${label}`;
-        selectButton.append(optionCheck, optionContent);
-        selectButton.addEventListener('click', () => {
-            setSelectedAccount(account.accountId);
-        });
-
-        const deleteButton = document.createElement('button');
-        deleteButton.type = 'button';
-        deleteButton.className = 'account-option-delete';
-        deleteButton.dataset.accountId = account.accountId;
-        deleteButton.title = `Delete ${label}`;
-        deleteButton.setAttribute('aria-label', `Delete ${label}`);
-        deleteButton.innerHTML = '<span aria-hidden="true">🗑️</span>';
-        deleteButton.addEventListener('click', async (event) => {
-            event.stopPropagation();
-            closeDropdown();
-            await handleAccountDelete(account.accountId);
-        });
-
-        optionRow.append(selectButton, deleteButton);
-        return optionRow;
+        return row;
     };
 
     const renderOptions = (filterText = '') => {
-        optionsList.innerHTML = '';
         const normalizedFilter = filterText.trim().toLowerCase();
-        let visibleCount = 0;
+        const identities = [
+            {
+                id: NORMAL_IDENTITY,
+                label: 'Normal account',
+                search: 'normal account'
+            },
+            ...launcherState.accounts.map((account) => ({
+                id: account.accountId,
+                label: getAccountLabel(account),
+                search: `${getAccountLabel(account)} ${account.accountId}`.toLowerCase()
+            }))
+        ].filter((identity) => !normalizedFilter || identity.search.includes(normalizedFilter));
 
-        const shouldShowNone =
-            normalizedFilter.length === 0 ||
-            'none'.includes(normalizedFilter);
-
-        if (shouldShowNone) {
-            optionsList.appendChild(createNoneOption());
-            visibleCount += 1;
+        optionsList.innerHTML = '';
+        if (identities.length === 0) {
+            const empty = document.createElement('p');
+            empty.className = 'accounts-options-empty';
+            empty.textContent = 'No saved characters match your search.';
+            optionsList.appendChild(empty);
+            return;
         }
-
-        accounts.forEach((account) => {
-            const displayName = getAccountLabel(account).toLowerCase();
-            if (
-                normalizedFilter &&
-                !displayName.includes(normalizedFilter)
-            ) {
-                return;
-            }
-
-            optionsList.appendChild(createAccountOption(account));
-            visibleCount += 1;
+        identities.forEach((identity) => {
+            optionsList.appendChild(createIdentityOption(identity));
         });
-
-        if (visibleCount === 0) {
-            optionsList.appendChild(emptyMessage.cloneNode(true));
-        }
     };
 
-    const openDropdown = () => {
+    const openDropdown = ({ focusFirst = false } = {}) => {
         dropdown.classList.add('open');
         toggleButton.setAttribute('aria-expanded', 'true');
-        renderOptions(searchInput.value);
-        requestAnimationFrame(() => {
-            searchInput.focus();
-        });
+        setTimeout(() => {
+            if (focusFirst || !searchInput) {
+                focusOption('first');
+            } else {
+                searchInput.focus();
+            }
+        }, 0);
     };
 
     toggleButton.addEventListener('click', () => {
@@ -1128,9 +888,35 @@ function renderAccountsList() {
             openDropdown();
         }
     });
-
-    searchInput.addEventListener('input', (event) => {
+    toggleButton.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            openDropdown({ focusFirst: true });
+        }
+    });
+    searchInput?.addEventListener('input', (event) => {
         renderOptions(event.target.value);
+    });
+    searchInput?.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            focusOption('first');
+        }
+    });
+    optionsList.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            focusOption('next');
+        } else if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            focusOption('previous');
+        } else if (event.key === 'Home') {
+            event.preventDefault();
+            focusOption('first');
+        } else if (event.key === 'End') {
+            event.preventDefault();
+            focusOption('last');
+        }
     });
 
     const handleOutsideClick = (event) => {
@@ -1138,986 +924,885 @@ function renderAccountsList() {
             closeDropdown();
         }
     };
-
-    const handleEscapeKey = (event) => {
-        if (event.key === 'Escape') {
-            if (dropdown.classList.contains('open')) {
-                closeDropdown();
-                toggleButton.focus();
-            }
+    const handleEscape = (event) => {
+        if (event.key === 'Escape' && dropdown.classList.contains('open')) {
+            event.preventDefault();
+            closeDropdown({ restoreFocus: true });
         }
     };
-
     document.addEventListener('click', handleOutsideClick);
-    document.addEventListener('keydown', handleEscapeKey);
-
-    cleanupAccountsDropdownListeners = () => {
+    document.addEventListener('keydown', handleEscape);
+    launcherState.cleanupAccountsDropdownListeners = () => {
         document.removeEventListener('click', handleOutsideClick);
-        document.removeEventListener('keydown', handleEscapeKey);
+        document.removeEventListener('keydown', handleEscape);
     };
 
-    panel.append(searchWrapper, optionsList);
+    renderOptions();
     dropdown.append(toggleButton, panel);
-    listContainer.appendChild(dropdown);
+    container.appendChild(dropdown);
+}
+
+async function applyAccounts(accounts, preferredIdentity, { persist = true } = {}) {
+    launcherState.accounts = sortAccounts(accounts);
+    const resolved = window.CupidLauncherUI.resolveIdentity(
+        launcherState.accounts,
+        preferredIdentity
+    );
+    populateAccountSelector(resolved);
+    await selectIdentity(resolved, { persist });
+    syncAccountActions();
+}
+
+async function handleAddAccounts() {
+    if (launcherState.accountActionBusy) return;
+    const button = $('add-accounts');
+    const previousIdentity = getSelectedIdentity();
+    const previousIds = new Set(
+        launcherState.accounts.map((account) => account.accountId)
+    );
+
+    launcherState.accountActionBusy = true;
+    setButtonBusy(button, true);
+    syncAccountActions();
+    try {
+        const result = await window.electron.startAuthFlow();
+        if (result?.error) {
+            throw new Error(result.error);
+        }
+        const updated = await safeReadAccounts();
+        if (!updated) return;
+        const newAccounts = updated.filter(
+            (account) => !previousIds.has(account.accountId)
+        );
+        const nextIdentity = newAccounts[0]?.accountId || previousIdentity;
+        await applyAccounts(updated, nextIdentity);
+        showToast(
+            newAccounts.length > 0
+                ? `${getAccountLabel(newAccounts[0])} added and selected.`
+                : 'Jagex accounts are already up to date.',
+            'success'
+        );
+    } catch (error) {
+        const message = asErrorMessage(error, 'Unable to add a Jagex account.');
+        logError(message);
+        showToast(message, 'error');
+    } finally {
+        launcherState.accountActionBusy = false;
+        setButtonBusy(button, false);
+        syncAccountActions();
+    }
+}
+
+async function handleRefreshAccounts() {
+    if (launcherState.accountActionBusy || launcherState.accounts.length === 0) return;
+    const button = $('refresh-accounts');
+    const currentIdentity = getSelectedIdentity();
+
+    launcherState.accountActionBusy = true;
+    setButtonBusy(button, true);
+    syncAccountActions();
+    try {
+        const result = await window.electron.refreshAccounts();
+        if (result?.error) {
+            throw new Error(result.error);
+        }
+        const updated = Array.isArray(result?.accounts)
+            ? sortAccounts(result.accounts)
+            : await safeReadAccounts();
+        if (!updated) return;
+        await applyAccounts(updated, currentIdentity);
+        showToast('Saved Jagex characters refreshed.', 'success');
+    } catch (error) {
+        const message = asErrorMessage(error, 'Unable to refresh accounts.');
+        logError(message);
+        showToast(message, 'error');
+    } finally {
+        launcherState.accountActionBusy = false;
+        setButtonBusy(button, false);
+        syncAccountActions();
+    }
 }
 
 async function handleAccountDelete(accountId) {
-    if (!accountId) {
-        return;
-    }
-
-    const account = accounts.find((acc) => acc.accountId === accountId);
+    const account = launcherState.accounts.find(
+        (item) => item.accountId === accountId
+    );
     if (!account) {
-        window.electron.errorAlert('Account not found.');
+        showToast('That Jagex character is no longer available.', 'error');
         return;
     }
 
-    const confirmation = await window.electron.showConfirmationDialog(
-        'Delete account?',
-        'This will permanently remove this account. This action cannot be undone.',
-        'Delete account?',
+    const confirmed = await window.electron.showConfirmationDialog(
+        `Remove ${getAccountLabel(account)}?`,
+        'This removes the saved character from CupidBot Launcher. You can connect it again later.',
+        'Remove Jagex character',
         'Cancel',
-        'Delete',
-        {
-            defaultId: 0,
-            cancelId: 0,
-            confirmIndex: 1
-        }
+        'Remove',
+        { defaultId: 0, cancelId: 0, confirmIndex: 1 }
     );
-
-    if (typeof confirmation !== 'boolean') {
-        if (confirmation?.error) {
-            window.electron.errorAlert(
-                `Failed to confirm deletion: ${confirmation.error}`
-            );
-        }
+    if (confirmed?.error) {
+        await showBlockingError(confirmed.error, 'Unable to confirm account removal.');
         return;
     }
+    if (!confirmed) return;
 
-    if (!confirmation) {
-        return;
-    }
-
-    const result = await window.electron.deleteAccount(accountId);
-    if (result?.error) {
-        window.electron.errorAlert(
-            `Failed to delete account: ${result.error}`
-        );
-        return;
-    }
-
-    const updatedAccounts = await safeReadAccounts();
-    if (!updatedAccounts) {
-        return;
-    }
-
-    accounts = updatedAccounts;
-    await setupSidebarLayout(accounts.length);
-    await updateProfileBasedOnCharacter();
-}
-
-async function removeAccountsHandler() {
-    const userConfirmed = confirm('Are you sure you want to proceed?');
-    if (!userConfirmed) return;
-
-    // Remove accounts via the Electron API
-    await window.electron.removeAccounts();
-
-    // Update the global accounts array
-    accounts = [];
-
-    // Reset UI to show no accounts state
-    await setupSidebarLayout(0);
-
-    // Update the profile to non-Jagex profile or default
-    await updateProfileBasedOnCharacter();
-
-    // Update the play button text
-    document.getElementById('play').innerHTML = 'Login Jagex Account';
-}
-
-function setupLogoutButton() {
-    const logoutBtn = document.getElementById('logout');
-    logoutBtn?.removeEventListener('click', removeAccountsHandler);
-    logoutBtn?.addEventListener('click', removeAccountsHandler);
-}
-
-async function setupSidebarLayout(amountOfAccounts) {
-    const selectedAccount = document.getElementById('character')?.value;
-    const playJagexButton = document.getElementById('play');
-    const playButtonsDiv = document.querySelector('.play-buttons');
-    const logoutButton = document.getElementById('logout');
-    const addAccountsButton = document.getElementById('add-accounts');
-    const characterSelectLabel = document.querySelector(
-        'label[for="character"]'
-    );
-    const accountsDropdownContainer = document.getElementById(
-        'accounts-dropdown-container'
-    );
-    const jagexAccountPicker = document.querySelector('.jagex-account-picker');
-
-    if (amountOfAccounts > 0) {
-        playJagexButton.innerHTML = 'Play With Jagex Account';
-        logoutButton.style.display = 'block';
-        playButtonsDiv.style.display = 'flex';
-        if (jagexAccountPicker) {
-            jagexAccountPicker.style.display = 'block';
-        }
-        if (characterSelectLabel) {
-            characterSelectLabel.style.display = 'block';
-        }
-        if (accountsDropdownContainer) {
-            accountsDropdownContainer.style.display = 'block';
-        }
-        addAccountsButton.style.display = 'block';
-        populateAccountSelector(accounts, selectedAccount);
-        const accountStillExists = accounts.some(
-            (acc) => acc.accountId === selectedAccount
-        );
-        if (!accountStillExists) {
-            if (accounts.length > 0) {
-                updateCharacterSelection(accounts[0].accountId, {
-                    suppressRender: true
-                });
-            } else {
-                updateCharacterSelection('none', { suppressRender: true });
-            }
-        }
-        // Note: populateAccountSelector uses updateCharacterSelection which
-        // triggers the profile update via the change event
-        setupLogoutButton();
-        setupAddAccountsButton();
-    } else {
-        // Reset UI for no accounts state
-        playJagexButton.innerHTML = 'Login Jagex Account';
-        logoutButton.style.display = 'none';
-        playButtonsDiv.style.display = 'block';
-        if (jagexAccountPicker) {
-            jagexAccountPicker.style.display = 'none';
-        }
-        if (characterSelectLabel) {
-            characterSelectLabel.style.display = 'none';
-        }
-        if (accountsDropdownContainer) {
-            accountsDropdownContainer.style.display = 'none';
-        }
-        addAccountsButton.style.display = 'none';
-
-        // Clear character selector and make sure 'none' is selected
-        populateAccountSelector([], 'none');
-
-        // Also update the profile to use non-Jagex profile or default
-        updateProfileBasedOnCharacter();
-    }
-
-    renderAccountsList();
-}
-
-async function addAccountsHandler() {
-    const addAccountsButton = document.getElementById('add-accounts');
-    addAccountsButton.classList.add('disabled');
     try {
-        const authResult = await window.electron.startAuthFlow();
-        if (authResult?.error) {
-            window.electron.errorAlert(authResult.error);
-        }
-    } catch (err) {
-        window.electron.errorAlert(err?.message || String(err));
-    } finally {
-        document.getElementById('add-accounts').classList.remove('disabled');
-    }
-}
-
-function setupAddAccountsButton() {
-    const addAccountsButton = document.getElementById('add-accounts');
-    addAccountsButton?.removeEventListener('click', addAccountsHandler);
-    addAccountsButton?.addEventListener('click', addAccountsHandler);
-}
-
-function setupRefreshAccountsButton() {
-    const refreshBtn = document.getElementById('refresh-accounts');
-    if (!refreshBtn) return;
-    refreshBtn.addEventListener('click', async () => {
-        refreshBtn.disabled = true;
-        try {
-            const result = await window.electron.refreshAccounts();
-            if (result?.error) {
-                window.electron.errorAlert(result.error);
-                return;
-            }
-            const updated = result?.accounts;
-            if (Array.isArray(updated)) {
-                // Sort updated accounts alphabetically
-                accounts = [...updated].sort((a, b) => {
-                    const nameA = (a?.displayName || a?.accountId || '').toString().trim().toLowerCase();
-                    const nameB = (b?.displayName || b?.accountId || '').toString().trim().toLowerCase();
-                    if (nameA < nameB) return -1;
-                    if (nameA > nameB) return 1;
-                    return 0;
-                });
-                await setupSidebarLayout(accounts.length);
-                await updateProfileBasedOnCharacter();
-                await restoreSelectedAccountIfAny();
-            } else {
-                // fallback: re-read accounts via existing flow
-                const latestAccounts = await safeReadAccounts();
-                if (latestAccounts) {
-                    accounts = latestAccounts; // already sorted in safeReadAccounts
-                    await setupSidebarLayout(accounts.length);
-                    await updateProfileBasedOnCharacter();
-                    await restoreSelectedAccountIfAny();
-                }
-            }
-        } catch (err) {
-            window.electron.errorAlert(err?.message || String(err));
-        } finally {
-            refreshBtn.disabled = false;
-        }
-    });
-}
-
-/**
- * Extracts the version number from a string.
- * e.g., "cupidbot-1.9.6.1.jar" becomes "1.9.6.1"
- * @param {string} versionString - The string containing the version.
- * @returns {string} The extracted version number.
- */
-function extractVersion(versionString) {
-    const s = String(versionString ?? '');
-    return s.replace(/^cupidbot-/, '').replace(/\.jar$/, '');
-}
-
-/**
- * Setup play button for launching without Jagex account
- *
- * First checks for the attempt of launching an outdated version of the client.
- * If the selected client is missing, it checks the local jar store.
- */
-function playNoJagexAccount() {
-    const playNoJagexButton = document.getElementById('play-no-jagex-account');
-    playNoJagexButton?.removeEventListener('click', playButtonClickHandler);
-    playNoJagexButton?.addEventListener('click', async () => {
-        await checkForOutdatedLaunch();
-
-        const proxy = getProxyValues();
-        const ramPreference = getClientRamPreference();
-        const selectedVersion = document.getElementById('client').value;
-
-        // Check if a valid client version is selected
-        if (
-            !selectedVersion ||
-            selectedVersion === '' ||
-            !selectedVersion.includes('cupidbot-')
-        ) {
-            window.electron.errorAlert('Please select a valid client version');
-            return;
-        }
-
-        const version = extractVersion(selectedVersion);
-
-        const selectedProfile =
-            document.getElementById('profile').value || 'default';
-        await window.electron.setProfileNoJagexAccount(selectedProfile);
-        const result = await downloadClientIfNotExist(version);
-        if (result?.exists) {
-            try {
-                const result = await window.electron.updateClientJarTTL(
-                    version
-                );
-                if (result?.error) {
-                    window.electron.logError(result.error);
-                }
-                const playResult = await window.electron.playNoJagexAccount(
-                    version,
-                    proxy,
-                    ramPreference
-                );
-                if (playResult?.error) {
-                    window.electron.errorAlert(playResult.error);
-                }
-            } catch (err) {
-                window.electron.errorAlert(err?.message || String(err));
-            }
-        }
-    });
-}
-
-/**
- * Checks if the client exists, and asks the local jar resolver to use it if needed.
- *
- * @async
- * @param {*} version
- * @returns {Promise<{exists: boolean}>}
- */
-async function downloadClientIfNotExist(version) {
-    if (!(await window.electron.clientExists(version))) {
-        window.electron.logError(
-            `Client ${version} does not exist. Checking local jar store...`
-        );
-        document.getElementById('loader-container').style.display = 'block';
-
-        /** @type {{success: boolean, error?: string, path?: string}} */
-        const result = await window.electron.downloadClient(version);
+        const result = await window.electron.deleteAccount(accountId);
         if (result?.error) {
-            window.electron.errorAlert(result.error);
-            return { exists: false };
+            throw new Error(result.error);
         }
+        const updated = (await safeReadAccounts()) || [];
+        const preferred = getSelectedIdentity() === accountId
+            ? NORMAL_IDENTITY
+            : getSelectedIdentity();
+        await applyAccounts(updated, preferred);
+        showToast(`${getAccountLabel(account)} removed.`, 'success');
+    } catch (error) {
+        const message = asErrorMessage(error, 'Unable to remove this character.');
+        logError(message);
+        showToast(message, 'error');
     }
-    window.electron.logError(`Client ${version} is ready.`);
-    await populateAndSelectClientVersion(version);
-    return { exists: true };
 }
 
-function updateNowBtn() {
-    document
-        .querySelector('#update-now-btn')
-        .addEventListener('click', async () => {
-            if (iii) clearInterval(iii);
-            document.querySelector('#update-available').style = 'display:none';
-            document.getElementById('loader-container').style.display = 'block';
-            const clientVersion = await window.electron.fetchClientVersion();
-            const result = await window.electron.downloadClient(clientVersion);
-            if (result?.error) {
-                window.electron.errorAlert(result.error);
-                document.getElementById('loader-container').style.display =
-                    'none';
+async function handleRemoveAllAccounts() {
+    if (launcherState.accounts.length === 0) return;
+    const confirmed = await window.electron.showConfirmationDialog(
+        'Remove all saved Jagex accounts?',
+        'Normal account launching remains available. You can reconnect Jagex characters later.',
+        'Remove all accounts',
+        'Cancel',
+        'Remove all',
+        { defaultId: 0, cancelId: 0, confirmIndex: 1 }
+    );
+    if (confirmed?.error) {
+        await showBlockingError(confirmed.error, 'Unable to confirm account removal.');
+        return;
+    }
+    if (!confirmed) return;
+
+    launcherState.accountActionBusy = true;
+    syncAccountActions();
+    try {
+        const result = await window.electron.removeAccounts();
+        if (result?.error) {
+            throw new Error(result.error);
+        }
+        await applyAccounts([], NORMAL_IDENTITY);
+        showToast('All saved Jagex accounts were removed.', 'success');
+    } catch (error) {
+        const message = asErrorMessage(error, 'Unable to remove accounts.');
+        logError(message);
+        showToast(message, 'error');
+    } finally {
+        launcherState.accountActionBusy = false;
+        syncAccountActions();
+    }
+}
+
+function startAccountsPoll() {
+    if (launcherState.accountsPollHandle) return;
+    launcherState.accountsPollHandle = setInterval(async () => {
+        if (launcherState.accountsPollBusy || launcherState.accountActionBusy) return;
+        launcherState.accountsPollBusy = true;
+        try {
+            const changed = await window.electron.checkFileChange();
+            if (changed?.error) {
+                logError(changed.error);
                 return;
             }
-
-            await populateAndSelectClientVersion(clientVersion);
-
-            // Update client field in properties to the latest version
-            const properties = await window.electron.readProperties();
-            properties['client'] = clientVersion;
-            await window.electron.writeProperties(properties);
-
-            document.getElementById('loader-container').style.display = 'none';
-        });
+            if (!changed) return;
+            const currentIdentity = getSelectedIdentity();
+            const updated = await safeReadAccounts({ quiet: true });
+            if (updated) {
+                await applyAccounts(updated, currentIdentity);
+            }
+        } catch (error) {
+            logError(error);
+        } finally {
+            launcherState.accountsPollBusy = false;
+        }
+    }, ACCOUNT_POLL_INTERVAL_MS);
 }
 
-/**
- * Populate and select client version
- *
- * @async
- * @param {string} version
- */
-async function populateAndSelectClientVersion(version) {
-    // Extract the version
-    version = extractVersion(version);
-
-    // Refresh client versions list after local jar resolution
-    const orderedClientJars = await orderClientJarsByVersion();
-    updateLauncherInfoPanel({ installedClientJars: orderedClientJars });
-    populateSelectElement('client', orderedClientJars);
-
-    // Set the newly resolved version as the selected value
-    await selectClientVersion(version);
+function extractVersion(versionString) {
+    return String(versionString ?? '')
+        .replace(/^cupidbot-/, '')
+        .replace(/\.jar$/, '');
 }
 
-/**
- * Select client version select element value
- *
- * @async
- * @param {string} version - The version to select (e.g. "1.9.9.1")
- */
-async function selectClientVersion(version) {
-    const clientSelect = document.getElementById('client');
-    for (let i = 0; i < clientSelect.options.length; i++) {
-        if (clientSelect.options[i].value.includes(version)) {
-            clientSelect.selectedIndex = i;
-            clientSelect.value = clientSelect.options[i].value;
-            break;
+function compareVersionFiles(a, b) {
+    const partsA = extractVersion(a).split('.').map(Number);
+    const partsB = extractVersion(b).split('.').map(Number);
+    const length = Math.max(partsA.length, partsB.length);
+    for (let index = 0; index < length; index += 1) {
+        const valueA = Number.isFinite(partsA[index]) ? partsA[index] : 0;
+        const valueB = Number.isFinite(partsB[index]) ? partsB[index] : 0;
+        if (valueA !== valueB) {
+            return valueB - valueA;
         }
     }
-    await updateVersionPreference({
-        target: { value: version }
-    });
+    return 0;
 }
 
-function reminderMeLaterBtn() {
-    document
-        .querySelector('#remind-me-later-btn')
-        .addEventListener('click', async () => {
-            document.querySelector('#update-available').style = 'display:none';
-        });
-}
-
-function getProxyValues() {
-    // Get the value of the proxy IP
-    return { proxyIp: document.getElementById('proxy-ip')?.value || '' };
-}
-
-function getClientRamPreference() {
-    const ramSelect = document.getElementById('client-ram');
-    if (!ramSelect) {
-        return DEFAULT_CLIENT_RAM;
-    }
-
-    return sanitizeRamPreference(ramSelect.value);
-}
-
-function startLoading(event) {
-    const button = event.target;
-    button.classList.add('loading');
-
-    setTimeout(() => {
-        button.classList.remove('loading');
-    }, 1000);
-}
-
-/**
- * Reads the current preferred version and selects it on the launcher UI.
- *
- * @async
- * @param {*} properties
- */
-async function setVersionPreference(properties) {
-    if (
-        properties &&
-        properties['version_pref'] &&
-        properties['version_pref'] !== '0.0.0'
-    ) {
-        await selectClientVersion(properties['version_pref']);
-    } else {
-        await updateVersionPreference({
-            target: { value: document.getElementById('client').value }
-        });
-    }
-
-    /**
-     * Remove any other listeners before adding a new one
-     */
-    const clientSelect = document.getElementById('client');
-    clientSelect.replaceWith(clientSelect.cloneNode(true));
-
-    document
-        .getElementById('client')
-        .addEventListener('change', async (event) => {
-            await updateVersionPreference(event);
-        });
-}
-
-async function updateVersionPreference(event) {
-    const selectedValue = extractVersion(event.target.value);
-    const properties = await window.electron.readProperties();
-    properties['version_pref'] = selectedValue;
-    await window.electron.writeProperties(properties);
-}
-
-async function nativeWindowControlFallbacks() {
-    document.getElementById('minimize-btn')?.addEventListener('click', () => {
-        window.electron.minimizeWindow();
-    });
-
-    document.getElementById('maximize-btn')?.addEventListener('click', () => {
-        window.electron.maximizeWindow();
-    });
-
-    document.getElementById('close-btn')?.addEventListener('click', () => {
-        window.electron.closeLauncher();
-    });
-}
-
-/**
- * Updates the profile selector based on the selected character or default settings
- *
- * @async
- * @returns {Promise<void>}
- */
-async function updateProfileBasedOnCharacter() {
-    const characterSelect = document.getElementById('character');
-    const selectedAccountId = characterSelect?.value;
-    const profileSelect = document.getElementById('profile');
-
-    if (
-        selectedAccountId &&
-        selectedAccountId !== 'none' &&
-        accounts.length > 0
-    ) {
-        const selectedAccount = accounts.find(
-            (acc) => acc.accountId === selectedAccountId
-        );
-        if (selectedAccount && selectedAccount.profile) {
-            profileSelect.value = selectedAccount.profile;
-        } else {
-            // If account exists but has no profile preference, use default
-            profileSelect.value = 'default';
-        }
-    } else {
-        // If no account is selected or no accounts exist, use the non-Jagex preferred profile
-        const nonJagexProfile = await window.electron.readNonJagexProfile();
-        if (nonJagexProfile) {
-            profileSelect.value = nonJagexProfile;
-        } else {
-            // If no non-Jagex profile preference exists, use default
-            profileSelect.value = 'default';
-        }
-    }
-}
-
-async function persistSelectedAccount(accountId) {
+async function readClientJars() {
     try {
-        const props = await window.electron.readProperties();
-        if (!accountId || accountId === 'none') {
-            if (props['selected_account']) {
-                delete props['selected_account'];
-                await window.electron.writeProperties(props);
-            }
-            return;
+        const result = await window.electron.listJars();
+        if (!Array.isArray(result)) {
+            throw new Error(result?.error || 'Client list is unavailable.');
         }
-        if (props['selected_account'] !== accountId) {
-            props['selected_account'] = accountId;
-            await window.electron.writeProperties(props);
-        }
-    } catch (err) {
-        window.electron.logError(`Failed to persist selected account: ${err?.message || err}`);
+        return [...result].sort(compareVersionFiles);
+    } catch (error) {
+        logError(error);
+        return [];
     }
 }
 
-async function restoreSelectedAccountIfAny() {
+function populateClientSelector(jars, preferredVersion = '') {
+    const select = $('client');
+    if (!select) return;
+    const currentVersion = preferredVersion || extractVersion(select.value);
+    select.innerHTML = '';
+
+    if (!Array.isArray(jars) || jars.length === 0) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'No local client found';
+        select.appendChild(option);
+        select.disabled = true;
+        return;
+    }
+
+    jars.forEach((jar) => {
+        const option = document.createElement('option');
+        option.value = jar;
+        option.textContent = `CupidBot ${extractVersion(jar)}`;
+        select.appendChild(option);
+    });
+    select.disabled = false;
+    const preferredFile = jars.find(
+        (jar) => extractVersion(jar) === extractVersion(currentVersion)
+    );
+    select.value = preferredFile || jars[0];
+}
+
+async function refreshClientInventory(preferredVersion = '') {
+    launcherState.jars = await readClientJars();
+    populateClientSelector(launcherState.jars, preferredVersion);
     try {
-        const props = await window.electron.readProperties();
-        const saved = props['selected_account'];
-        if (!saved) return;
-        const exists = accounts.some((a) => a.accountId === saved);
-        if (!exists) {
-            delete props['selected_account'];
-            await window.electron.writeProperties(props);
-            return;
-        }
-        restoringSelectedAccount = true;
-        updateCharacterSelection(saved, { suppressRender: true });
-        restoringSelectedAccount = false;
-        await updateProfileBasedOnCharacter();
-    } catch (err) {
-        window.electron.logError(`Failed to restore selected account: ${err?.message || err}`);
+        const latest = await window.electron.fetchClientVersion();
+        launcherState.clientVersion =
+            typeof latest === 'string' ? latest : '0.0.0';
+    } catch (error) {
+        launcherState.clientVersion = '0.0.0';
+        logError(error);
     }
-}
-
-async function initUI(properties) {
-    updateNowBtn();
-    reminderMeLaterBtn();
-    nativeWindowControlFallbacks();
-    setupHamburgerMenu();
-
-    // Setup play button for non-Jagex accounts
-    playNoJagexAccount();
-
-    // Setup play button for Jagex accounts
-    const playJagexButton = document.getElementById('play');
-    playJagexButton?.removeEventListener('click', playButtonClickHandler);
-    playJagexButton?.addEventListener('click', playButtonClickHandler);
-
-    const accountsData = await safeReadAccounts();
-    accounts = accountsData ?? [];
-    await setupSidebarLayout(accounts.length);
-    await restoreSelectedAccountIfAny();
-
-    const orderedClientJars = await orderClientJarsByVersion();
-    updateLauncherInfoPanel({ installedClientJars: orderedClientJars });
-    populateSelectElement('client', orderedClientJars);
-
-    // Get profiles and initialize profile selector
-    const profiles = await window.electron.listProfiles();
-    populateProfileSelector(profiles, null);
-
-    // Update the profile based on the selected character
-    await updateProfileBasedOnCharacter();
-
-    await setVersionPreference(properties);
-    document.querySelector('.game-info').style = 'display:block';
-
-    await setupRamInput();
-    await setupProxyInput();
-
-    setupRefreshAccountsButton();
-}
-
-/**
- * Setup the hamburger menu for the app.
- * Has some functional behavior for showing and hiding the menu
- * depending on user interaction.
- * @returns {void}
- */
-function setupHamburgerMenu() {
-    const menuBtn = document.getElementById('menu-btn');
-    const menu = document.getElementById('app-menu');
-    if (!menuBtn || !menu) return;
-
-    const hideMenu = () => {
-        if (!menu.classList.contains('hidden')) {
-            menu.classList.add('hidden');
-            menu.setAttribute('aria-hidden', 'true');
-            menuBtn.setAttribute('aria-expanded', 'false');
-            menu.classList.remove('closing');
-        }
-    };
-
-    const showMenu = () => {
-        const rect = menuBtn.getBoundingClientRect();
-        menu.classList.remove('hidden');
-        menu.setAttribute('aria-hidden', 'false');
-        menuBtn.setAttribute('aria-expanded', 'true');
-        menu.classList.remove('closing');
-
-        const viewportWidth =
-            document.documentElement.clientWidth || window.innerWidth;
-        const margin = 12;
-        const menuWidth = menu.offsetWidth || 160;
-        const maxLeft = Math.max(margin, viewportWidth - menuWidth - margin);
-        const preferredLeft = rect.right - menuWidth;
-        const left = Math.min(Math.max(preferredLeft, margin), maxLeft);
-
-        menu.style.left = `${Math.round(left)}px`;
-        menu.style.top = `${Math.round(rect.bottom + 6)}px`;
-        menu.classList.toggle('submenu-left', rect.left > viewportWidth / 2);
-    };
-
-    menuBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (menu.classList.contains('hidden')) showMenu();
-        else hideMenu();
-    });
-
-    // if clicked outside we hide the menu
-    document.addEventListener('click', (e) => {
-        if (!menu.contains(e.target) && e.target !== menuBtn) {
-            hideMenu();
-        }
-    });
-
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') hideMenu();
-    });
-
-    menu.querySelectorAll('.submenu-item').forEach((item) => {
-        item.addEventListener('click', async (e) => {
-            const key = item.getAttribute('data-location');
-            if (key) {
-                const res = await window.electron.openLocation(key);
-                if (res?.error) {
-                    window.electron.errorAlert(res.error);
-                }
-            }
-            hideMenu();
-        });
-    });
-
-    let hideTimeout = null;
-    const scheduleHide = () => {
-        hideTimeout = setTimeout(() => hideMenu(), 200);
-    };
-    const cancelHide = () => {
-        if (hideTimeout) {
-            clearTimeout(hideTimeout);
-            hideTimeout = null;
-        }
-    };
-
-    menu.addEventListener('pointerleave', () => {
-        // Mark as closing to keep submenu visible until root hides
-        if (!menu.classList.contains('closing')) menu.classList.add('closing');
-        scheduleHide();
-    });
-    menu.addEventListener('pointerenter', () => {
-        cancelHide();
-        menu.classList.remove('closing');
-    });
-}
-
-/**
- * Check for client updates and prompt the user if necessary.
- *
- * @async
- * @param {CupidBotProperties} properties - The properties object containing client information.
- */
-async function checkForClientUpdate(properties) {
-    const clientVersion = await window.electron.fetchClientVersion();
-    window.electron.logError(
-        `Current client version: ${clientVersion}, properties client version: ${properties['client']}`
-    );
-
-    /** @type {Array<string>} List of available client jars in the CupidBot directory. */
-    const listOfJars = await window.electron.listJars();
-
-    if (listOfJars.length === 0) {
-        window.electron.logError(
-            'No client jars found. Install a local CupidBot jar first.'
-        );
-    } else {
-        window.electron.logError(
-            `Available client jars: ${listOfJars.join(', ')}`
-        );
-    }
-    updateLauncherInfoPanel({
-        clientVersion,
-        installedClientJars: listOfJars
-    });
     if (
-        await shouldPromptForClientDownload(
-            clientVersion,
-            listOfJars,
-            properties
-        )
+        launcherState.jars.length > 0 &&
+        $('launch-status')?.textContent === 'No local CupidBot client found.'
     ) {
-        document.querySelector('#update-available').style = 'display:flex';
+        setLaunchMessage('');
     }
+    syncReadiness();
+    syncLaunchState();
 }
 
-/**
- * Keep the marketing webview offline. Jagex auth still uses its own OAuth flow.
- */
-function loadLandingPageWebview() {
-    const webview = document.getElementById('website');
-    const webviewOverlay = document.getElementById('embed-overlay');
-    if (webview) {
-        webview.src = 'about:blank';
-    }
-    if (webviewOverlay) {
-        webviewOverlay.classList.add('hidden');
-    }
-}
-
-/**
- * Order the client jars by version from latest to oldest.
- *
- * @async
- * @returns {Promise<string[]>} A promise that resolves to the ordered list of client jar file names.
- */
-async function orderClientJarsByVersion() {
-    const clientJars = await window.electron.listJars();
-    clientJars.sort((a, b) => {
-        const versionA_match = a.match(/-([\d.]+)\.jar$/);
-        const versionB_match = b.match(/-([\d.]+)\.jar$/);
-
-        if (versionA_match && versionB_match) {
-            const partsA = versionA_match[1].split('.').map(Number);
-            const partsB = versionB_match[1].split('.').map(Number);
-
-            for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
-                const partA = partsA[i] || 0;
-                const partB = partsB[i] || 0;
-                if (partA !== partB) {
-                    return partB - partA; // Sort descending
-                }
-            }
-        }
-        return 0;
-    });
-    return clientJars;
-}
-
-/**
- * Check if the latest client available is installed.
- * If not, make sure it's not written on properties file so it can be prompted
- * for local selection again.
- *
- * @async
- * @param {string} latestClientVersion - The version of the latest client available.
- * @param {Array<string>} installedClientVersions - The list of installed client versions.
- * @param {CupidBotProperties} properties - The properties object to update if necessary.
- * @returns {Promise<boolean>} True if the latest client is installed, false otherwise.
- */
-async function shouldPromptForClientDownload(
-    latestClientVersion,
-    installedClientVersions,
-    properties
-) {
-    const isLatestInstalled = installedClientVersions.some((file) =>
-        file.includes(latestClientVersion)
-    );
-    const isClientVersionOnPropertiesLatest =
-        properties['client'] === latestClientVersion;
-
-    // Latest version is installed, set on properties if not already set
-    if (isLatestInstalled) {
-        if (!isClientVersionOnPropertiesLatest) {
-            properties['client'] = latestClientVersion;
-            await window.electron.writeProperties(properties);
-        }
-        return false;
-    }
-
-    /**
-     * Latest version is not installed.
-     * Properties file is out of sync (e.g., client JAR was deleted).
-     * Correct the properties to the latest version actually installed.
-     */
-    if (isClientVersionOnPropertiesLatest) {
-        const orderedClientJars = await orderClientJarsByVersion();
-        if (orderedClientJars.length > 0) {
-            properties['client'] = extractVersion(orderedClientJars[0]);
-        } else {
-            properties['client'] = '0.0.0';
+async function persistVersionPreference(version, { markCurrent = false } = {}) {
+    if (!version) return;
+    try {
+        const properties = (await window.electron.readProperties()) || {};
+        properties.version_pref = extractVersion(version);
+        if (markCurrent) {
+            properties.client = extractVersion(version);
         }
         await window.electron.writeProperties(properties);
+    } catch (error) {
+        logError(error);
     }
+}
 
-    // Latest local jar is not selected yet, prompt to use it.
+async function selectClientVersion(version, { persist = true } = {}) {
+    const select = $('client');
+    if (!select) return false;
+    const target = extractVersion(version);
+    const match = launcherState.jars.find(
+        (jar) => extractVersion(jar) === target
+    );
+    if (!match) return false;
+    select.value = match;
+    if (persist) {
+        await persistVersionPreference(target);
+    }
+    syncLaunchState();
     return true;
 }
 
-/**
- * Check if the selected client version is outdated compared to the latest version
- * available before launch.
- *
- * If it is outdated, prompt the user to either skip the latest version or
- * use/launch the latest local version.
- *
- * @async
- */
-async function checkForOutdatedLaunch() {
-    const selectedVersion = extractVersion(
-        document.getElementById('client').value
-    );
-    const latestVersion = extractVersion(
-        await window.electron.fetchClientVersion()
-    );
+function populateProfileSelector(profiles, selectedProfile = 'default') {
+    const select = $('profile');
+    if (!select) return;
+    select.innerHTML = '';
 
-    window.electron.logError(
-        `Selected version: ${selectedVersion}, Latest version: ${latestVersion}`
-    );
-    if (
-        selectedVersion !== latestVersion &&
-        latestVersion !== sessionStorage.getItem('skippedVersion')
-    ) {
-        // Show confirmation dialog
-        // Proceed = Skip latest version
-        const userWantsToProceed = await window.electron.showConfirmationDialog(
-            'Do you want to proceed?',
-            `You are about to launch an older version (${selectedVersion}).\r\rThe latest version is ${latestVersion}.`,
-            'Outdated Version Warning',
-            'Skip latest version',
-            'Launch with the latest version'
-        );
-        window.electron.logError(`User chose: ${userWantsToProceed}`);
+    const defaultOption = document.createElement('option');
+    defaultOption.value = 'default';
+    defaultOption.textContent = 'Default';
+    select.appendChild(defaultOption);
 
-        if (userWantsToProceed) {
-            // User chose to skip the latest version
-            sessionStorage.setItem('skippedVersion', latestVersion);
+    if (Array.isArray(profiles)) {
+        profiles
+            .filter((profile) => typeof profile === 'string' && profile && profile !== 'default')
+            .forEach((profile) => {
+                const option = document.createElement('option');
+                option.value = profile;
+                option.textContent = profile;
+                select.appendChild(option);
+            });
+    }
+    ensureProfileOption(selectedProfile);
+    select.value = selectedProfile || 'default';
+}
+
+async function handleProfileChange(event) {
+    const profile = event.target.value || 'default';
+    const identityId = getSelectedIdentity();
+    try {
+        let result;
+        if (identityId === NORMAL_IDENTITY) {
+            result = await window.electron.setProfileNoJagexAccount(profile);
         } else {
-            // User chose to launch with the latest version, resolve it locally if needed
-            await downloadClientIfNotExist(latestVersion);
+            result = await window.electron.setProfileJagexAccount(
+                identityId,
+                profile
+            );
+            const account = getSelectedAccount();
+            if (account) {
+                account.profile = profile;
+            }
         }
-    }
-}
-
-/**
- * Check if there is a saved Proxy IP as a cookie and set it to the input field.
- * Also setup Proxy IP input field for change events so we can save to a cookie
- * and persist the value between sessions.
- */
-async function setupRamInput() {
-    const ramSelect = document.getElementById('client-ram');
-    if (!ramSelect) {
-        return;
-    }
-
-    const properties = await window.electron.readProperties();
-    const savedPreference = sanitizeRamPreference(properties['client_ram']);
-
-    if (savedPreference !== properties['client_ram']) {
-        properties['client_ram'] = savedPreference;
-        await window.electron.writeProperties(properties);
-    }
-
-    ensureRamOption(ramSelect, savedPreference);
-
-    const persistPreference = async (rawValue) => {
-        const normalized = sanitizeRamPreference(rawValue);
-        ensureRamOption(ramSelect, normalized);
-
-        const latestProperties = await window.electron.readProperties();
-        if (latestProperties['client_ram'] !== normalized) {
-            latestProperties['client_ram'] = normalized;
-            await window.electron.writeProperties(latestProperties);
+        if (result?.error) {
+            throw new Error(result.error);
         }
-    };
-
-    ramSelect.addEventListener('change', async (event) => {
-        await persistPreference(event.target.value);
-    });
-
-    ramSelect.addEventListener('blur', async (event) => {
-        await persistPreference(event.target.value);
-    });
-}
-
-async function setupProxyInput() {
-    const proxyInput = document.getElementById('proxy-ip');
-    if (!proxyInput) {
-        return;
+        setLaunchMessage('');
+        syncLaunchState();
+    } catch (error) {
+        const message = asErrorMessage(error, 'Unable to save profile preference.');
+        logError(message);
+        showToast(message, 'error');
     }
-
-    const properties = await window.electron.readProperties();
-    const savedProxy = properties['proxyip'];
-    if (savedProxy && savedProxy !== '') {
-        proxyInput.value = savedProxy;
-    }
-
-    proxyInput.addEventListener('input', async (event) => {
-        const value = event.target.value;
-        const properties = await window.electron.readProperties();
-        properties['proxyip'] = value;
-        await window.electron.writeProperties(properties);
-    });
-
-    proxyInput.addEventListener('blur', async (event) => {
-        const value = event.target.value;
-        const properties = await window.electron.readProperties();
-        properties['proxyip'] = value;
-        await window.electron.writeProperties(properties);
-    });
 }
 
 function sanitizeRamPreference(value) {
     if (!value || typeof value !== 'string') {
         return DEFAULT_CLIENT_RAM;
     }
-
     const normalized = value.trim().toLowerCase();
-    if (normalized === '') {
-        return DEFAULT_CLIENT_RAM;
-    }
-
-    const match = normalized.match(/^(\d+(?:\.\d+)?)([mg])$/);
-    if (!match) {
-        return DEFAULT_CLIENT_RAM;
-    }
-
-    const amount = match[1];
-    const unit = match[2];
-    return `${amount}${unit}`;
-}
-
-function ensureRamOption(selectElement, value) {
-    if (!selectElement) {
-        return;
-    }
-
-    const options = Array.from(selectElement.options || []);
-    if (!options.some((option) => option.value === value)) {
-        const option = document.createElement('option');
-        option.value = value;
-        option.textContent = formatRamLabel(value);
-        option.dataset.custom = 'true';
-        selectElement.appendChild(option);
-    }
-
-    selectElement.value = value;
+    return /^\d+(?:\.\d+)?[mg]$/.test(normalized)
+        ? normalized
+        : DEFAULT_CLIENT_RAM;
 }
 
 function formatRamLabel(value) {
-    if (typeof value !== 'string') {
-        return value;
-    }
-
-    const match = value.match(/^(\d+(?:\.\d+)?)([mg])$/i);
-    if (!match) {
-        return value;
-    }
-
-    const [, amount, unit] = match;
-    const unitLabel = unit.toLowerCase() === 'g' ? 'GB' : 'MB';
-    return `${amount} ${unitLabel}`;
+    const match = String(value || '').match(/^(\d+(?:\.\d+)?)([mg])$/i);
+    if (!match) return value || '';
+    return `${match[1]} ${match[2].toLowerCase() === 'g' ? 'GB' : 'MB'}`;
 }
+
+function ensureRamOption(select, value) {
+    if (!select) return;
+    const exists = Array.from(select.options).some(
+        (option) => option.value === value
+    );
+    if (!exists) {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = formatRamLabel(value);
+        select.appendChild(option);
+    }
+    select.value = value;
+}
+
+function getClientRamPreference() {
+    return sanitizeRamPreference($('client-ram')?.value || DEFAULT_CLIENT_RAM);
+}
+
+function getProxyValues() {
+    return { proxyIp: $('proxy-ip')?.value || '' };
+}
+
+async function writeProperty(key, value) {
+    try {
+        const properties = (await window.electron.readProperties()) || {};
+        if (properties[key] !== value) {
+            properties[key] = value;
+            await window.electron.writeProperties(properties);
+        }
+    } catch (error) {
+        logError(error);
+    }
+}
+
+async function setupAdvancedInputs(properties) {
+    const ramSelect = $('client-ram');
+    const proxyInput = $('proxy-ip');
+    const savedRam = sanitizeRamPreference(properties?.client_ram);
+    ensureRamOption(ramSelect, savedRam);
+    if (proxyInput) {
+        proxyInput.value = properties?.proxyip || '';
+    }
+    syncAdvancedSettingsSummary();
+    syncLaunchSummary();
+
+    ramSelect?.addEventListener('change', async (event) => {
+        const value = sanitizeRamPreference(event.target.value);
+        ensureRamOption(ramSelect, value);
+        syncAdvancedSettingsSummary();
+        syncLaunchSummary();
+        await writeProperty('client_ram', value);
+    });
+
+    let proxyWriteTimer = null;
+    const persistProxy = async () => {
+        if (proxyWriteTimer) {
+            clearTimeout(proxyWriteTimer);
+            proxyWriteTimer = null;
+        }
+        await writeProperty('proxyip', proxyInput?.value || '');
+    };
+    proxyInput?.addEventListener('input', () => {
+        syncAdvancedSettingsSummary();
+        clearTimeout(proxyWriteTimer);
+        proxyWriteTimer = setTimeout(persistProxy, 300);
+    });
+    proxyInput?.addEventListener('blur', persistProxy);
+}
+
+async function downloadClientIfNotExist(version) {
+    const normalized = extractVersion(version);
+    if (!normalized) {
+        throw new Error('Select a valid local client version.');
+    }
+
+    const exists = await window.electron.clientExists(normalized);
+    if (exists?.error) {
+        throw new Error(exists.error);
+    }
+    if (exists === true) {
+        return true;
+    }
+
+    showProgress(`Looking for CupidBot ${normalized} in the local store…`);
+    try {
+        const result = await window.electron.downloadClient(normalized);
+        if (result?.error) {
+            throw new Error(result.error);
+        }
+        await refreshClientInventory(normalized);
+        return true;
+    } finally {
+        hideProgress();
+    }
+}
+
+async function checkForOutdatedLaunch() {
+    const selectedVersion = getSelectedClientVersion();
+    const latestVersion = extractVersion(launcherState.clientVersion);
+    if (
+        !selectedVersion ||
+        !latestVersion ||
+        latestVersion === '0.0.0' ||
+        selectedVersion === latestVersion ||
+        sessionStorage.getItem('skippedVersion') === latestVersion
+    ) {
+        return true;
+    }
+
+    const useSelected = await window.electron.showConfirmationDialog(
+        `Launch CupidBot ${selectedVersion}?`,
+        `CupidBot ${latestVersion} is the newest local version. You can continue with ${selectedVersion} or switch before launching.`,
+        'Older client selected',
+        `Use ${selectedVersion}`,
+        `Use ${latestVersion}`,
+        { defaultId: 1, cancelId: 1, confirmIndex: 0 }
+    );
+    if (useSelected?.error) {
+        throw new Error(useSelected.error);
+    }
+    if (useSelected) {
+        sessionStorage.setItem('skippedVersion', latestVersion);
+        return true;
+    }
+
+    const selected = await selectClientVersion(latestVersion);
+    if (!selected) {
+        throw new Error(`Local CupidBot ${latestVersion} is not available.`);
+    }
+    return true;
+}
+
+async function launchNormalAccount(version) {
+    const profile = $('profile')?.value || 'default';
+    const profileResult = await window.electron.setProfileNoJagexAccount(profile);
+    if (profileResult?.error) {
+        throw new Error(profileResult.error);
+    }
+    const ttlResult = await window.electron.updateClientJarTTL(version);
+    if (ttlResult?.error) {
+        logError(ttlResult.error);
+    }
+    const result = await window.electron.playNoJagexAccount(
+        version,
+        getProxyValues(),
+        getClientRamPreference()
+    );
+    if (result?.error) {
+        throw new Error(result.error);
+    }
+}
+
+async function launchJagexAccount(version, account) {
+    if (!account) {
+        throw new Error('Select a valid Jagex character.');
+    }
+    const profile = $('profile')?.value || 'default';
+    account.profile = profile;
+    const profileResult = await window.electron.setProfileJagexAccount(
+        account.accountId,
+        profile
+    );
+    if (profileResult?.error) {
+        throw new Error(profileResult.error);
+    }
+    const ttlResult = await window.electron.updateClientJarTTL(version);
+    if (ttlResult?.error) {
+        logError(ttlResult.error);
+    }
+    const credentialResult = await window.electron.overwriteCredentialProperties(account);
+    if (credentialResult?.error) {
+        throw new Error(credentialResult.error);
+    }
+    const result = await window.electron.openClient(
+        version,
+        getProxyValues(),
+        account,
+        getClientRamPreference()
+    );
+    if (result?.error) {
+        throw new Error(result.error);
+    }
+}
+
+async function handleLaunchSubmit(event) {
+    event.preventDefault();
+    if (launcherState.launchBusy) return;
+
+    const view = window.CupidLauncherUI.deriveLaunchState({
+        accounts: launcherState.accounts,
+        identityId: getSelectedIdentity(),
+        jars: launcherState.jars,
+        busy: false
+    });
+    if (!view.enabled) {
+        setLaunchMessage(view.reason, 'error');
+        return;
+    }
+
+    launcherState.launchBusy = true;
+    setLaunchMessage('Preparing CupidBot…');
+    syncLaunchState();
+    try {
+        await checkForOutdatedLaunch();
+        const version = getSelectedClientVersion();
+        await downloadClientIfNotExist(version);
+
+        setLaunchMessage('Starting CupidBot…');
+        syncLaunchState();
+
+        if (view.mode === 'normal') {
+            await launchNormalAccount(version);
+        } else {
+            await launchJagexAccount(version, getSelectedAccount());
+        }
+        setLaunchMessage('CupidBot launched successfully.', 'success');
+        showToast(`CupidBot launched for ${getIdentityLabel()}.`, 'success');
+    } catch (error) {
+        await showBlockingError(error, 'Unable to launch CupidBot.');
+    } finally {
+        launcherState.launchBusy = false;
+        syncLaunchState();
+    }
+}
+
+function hideUpdateNotice() {
+    $('update-available')?.classList.add('is-hidden');
+}
+
+function showUpdateNotice(version) {
+    setTextContent(
+        'update-description',
+        `CupidBot ${version} is already in your local store and ready to use.`
+    );
+    $('update-available')?.classList.remove('is-hidden');
+}
+
+async function checkForClientUpdate() {
+    const selectedBeforeRefresh = getSelectedClientVersion();
+    await refreshClientInventory(selectedBeforeRefresh);
+    const latestVersion = extractVersion(launcherState.clientVersion);
+    const selectedVersion = getSelectedClientVersion();
+
+    if (!latestVersion || latestVersion === '0.0.0') {
+        hideUpdateNotice();
+        return;
+    }
+
+    const dismissedVersion = sessionStorage.getItem('dismissedClientUpdate');
+    if (
+        selectedVersion &&
+        selectedVersion !== latestVersion &&
+        dismissedVersion !== latestVersion
+    ) {
+        showUpdateNotice(latestVersion);
+    } else {
+        hideUpdateNotice();
+    }
+
+    try {
+        const properties = (await window.electron.readProperties()) || {};
+        if (properties.client !== latestVersion) {
+            properties.client = latestVersion;
+            await window.electron.writeProperties(properties);
+        }
+    } catch (error) {
+        logError(error);
+    }
+}
+
+async function handleUseLatestVersion() {
+    const button = $('update-now-btn');
+    setButtonBusy(button, true);
+    try {
+        const latestVersion = extractVersion(launcherState.clientVersion);
+        await downloadClientIfNotExist(latestVersion);
+        const selected = await selectClientVersion(latestVersion);
+        if (!selected) {
+            throw new Error(`Local CupidBot ${latestVersion} is not available.`);
+        }
+        await persistVersionPreference(latestVersion, { markCurrent: true });
+        sessionStorage.removeItem('dismissedClientUpdate');
+        hideUpdateNotice();
+        showToast(`CupidBot ${latestVersion} selected.`, 'success');
+    } catch (error) {
+        await showBlockingError(error, 'Unable to use the latest local version.');
+    } finally {
+        setButtonBusy(button, false);
+        syncLaunchState();
+    }
+}
+
+function handleDismissUpdate() {
+    const latestVersion = extractVersion(launcherState.clientVersion);
+    if (latestVersion) {
+        sessionStorage.setItem('dismissedClientUpdate', latestVersion);
+    }
+    hideUpdateNotice();
+}
+
+function startUpdatePoll() {
+    if (launcherState.updatePollHandle) return;
+    launcherState.updatePollHandle = setInterval(
+        checkForClientUpdate,
+        UPDATE_POLL_INTERVAL_MS
+    );
+}
+
+async function openLocation(locationKey) {
+    try {
+        const result = await window.electron.openLocation(locationKey);
+        if (result?.error) {
+            throw new Error(result.error);
+        }
+    } catch (error) {
+        const message = asErrorMessage(error, 'Unable to open this folder.');
+        logError(message);
+        showToast(message, 'error');
+    }
+}
+
+function setupAppMenu() {
+    const menuButton = $('menu-btn');
+    const menu = $('app-menu');
+    if (!menuButton || !menu) return;
+
+    const hideMenu = ({ restoreFocus = false } = {}) => {
+        menu.classList.add('hidden');
+        menu.setAttribute('aria-hidden', 'true');
+        menuButton.setAttribute('aria-expanded', 'false');
+        if (restoreFocus) {
+            menuButton.focus();
+        }
+    };
+
+    const showMenu = () => {
+        menu.classList.remove('hidden');
+        menu.setAttribute('aria-hidden', 'false');
+        menuButton.setAttribute('aria-expanded', 'true');
+        const rect = menuButton.getBoundingClientRect();
+        const menuWidth = menu.offsetWidth || 280;
+        const left = Math.max(8, Math.min(window.innerWidth - menuWidth - 8, rect.right - menuWidth));
+        const top = Math.min(window.innerHeight - menu.offsetHeight - 8, rect.bottom + 7);
+        menu.style.left = `${left}px`;
+        menu.style.top = `${Math.max(8, top)}px`;
+        setTimeout(() => menu.querySelector('.menu-action')?.focus(), 0);
+    };
+
+    menuButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (menu.classList.contains('hidden')) {
+            showMenu();
+        } else {
+            hideMenu();
+        }
+    });
+    document.addEventListener('click', (event) => {
+        if (!menu.contains(event.target) && event.target !== menuButton) {
+            hideMenu();
+        }
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && !menu.classList.contains('hidden')) {
+            hideMenu({ restoreFocus: true });
+        }
+    });
+    menu.addEventListener('keydown', (event) => {
+        const items = Array.from(menu.querySelectorAll('.menu-action'));
+        const currentIndex = items.indexOf(document.activeElement);
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            items[(currentIndex + 1 + items.length) % items.length]?.focus();
+        } else if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            items[(currentIndex - 1 + items.length) % items.length]?.focus();
+        }
+    });
+    menu.querySelectorAll('.menu-action').forEach((item) => {
+        item.addEventListener('click', async () => {
+            hideMenu();
+            await openLocation(item.dataset.location);
+        });
+    });
+}
+
+function setupStaticListeners() {
+    $('launch-form')?.addEventListener('submit', handleLaunchSubmit);
+    $('add-accounts')?.addEventListener('click', handleAddAccounts);
+    $('refresh-accounts')?.addEventListener('click', handleRefreshAccounts);
+    $('logout')?.addEventListener('click', handleRemoveAllAccounts);
+    $('open-client-folder')?.addEventListener('click', () =>
+        openLocation('cupidbot-folder')
+    );
+    $('update-now-btn')?.addEventListener('click', handleUseLatestVersion);
+    $('remind-me-later-btn')?.addEventListener('click', handleDismissUpdate);
+    $('profile')?.addEventListener('change', handleProfileChange);
+    $('client')?.addEventListener('change', async (event) => {
+        await persistVersionPreference(event.target.value);
+        sessionStorage.removeItem('skippedVersion');
+        setLaunchMessage('');
+        syncLaunchState();
+        await checkForClientUpdate();
+    });
+    $('character')?.addEventListener('change', async (event) => {
+        await selectIdentity(event.target.value, { persist: true });
+    });
+    setupAppMenu();
+}
+
+async function initializeLauncher() {
+    await loadRecentUpdates();
+    const propertiesResult = await window.electron.readProperties();
+    const properties = propertiesResult?.error ? {} : propertiesResult || {};
+
+    try {
+        launcherState.launcherVersion = await window.electron.launcherVersion();
+    } catch (error) {
+        launcherState.launcherVersion = '';
+        logError(error);
+    }
+    document.title = launcherState.launcherVersion
+        ? `CupidBot Launcher - ${launcherState.launcherVersion}`
+        : 'CupidBot Launcher';
+
+    setupStaticListeners();
+    await setupAdvancedInputs(properties);
+
+    let profiles = [];
+    try {
+        const result = await window.electron.listProfiles();
+        profiles = Array.isArray(result) ? result : [];
+        if (result?.error) {
+            logError(result.error);
+        }
+    } catch (error) {
+        logError(error);
+    }
+    launcherState.profiles = profiles;
+    populateProfileSelector(profiles);
+
+    const accounts = (await safeReadAccounts()) || [];
+    launcherState.accounts = accounts;
+    const savedIdentity = window.CupidLauncherUI.resolveIdentity(
+        accounts,
+        properties.selected_account
+    );
+    populateAccountSelector(savedIdentity);
+
+    await refreshClientInventory(properties.version_pref);
+    await selectIdentity(savedIdentity, { persist: true });
+
+    if (launcherState.clientVersion !== '0.0.0') {
+        try {
+            const cleanupResult = await window.electron.cleanUnusedClients(
+                launcherState.clientVersion
+            );
+            if (cleanupResult?.error) {
+                logError(cleanupResult.error);
+            }
+            await refreshClientInventory(getSelectedClientVersion());
+        } catch (error) {
+            logError(error);
+        }
+    }
+
+    syncAccountActions();
+    syncAdvancedSettingsSummary();
+    syncLaunchState();
+    await checkForClientUpdate();
+    startAccountsPoll();
+    startUpdatePoll();
+}
+
+async function ensureLauncherInitialized() {
+    if (launcherState.launcherInitialized) return;
+    launcherState.launcherInitialized = true;
+    try {
+        await initializeLauncher();
+    } catch (error) {
+        launcherState.launcherInitialized = false;
+        await showBlockingError(error, 'CupidBot Launcher could not initialize.');
+    }
+}
+
+window.addEventListener('error', (event) => {
+    const message = asErrorMessage(event.error || event.message, 'Unexpected launcher error.');
+    logError(message);
+    showToast(message, 'error');
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+    event.preventDefault();
+    const message = asErrorMessage(event.reason, 'Unexpected launcher error.');
+    logError(message);
+    showToast(message, 'error');
+});
+
+window.addEventListener('load', async () => {
+    setupAuthUI();
+    await refreshAuthStatus();
+});
