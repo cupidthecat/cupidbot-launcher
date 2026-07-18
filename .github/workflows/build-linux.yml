@@ -25,7 +25,7 @@ jobs:
               run: npm test
 
             - name: Build AppImage
-              run: npm run linux
+              run: npm run linux -- --publish never
 
             - name: Get version from package.json
               id: version

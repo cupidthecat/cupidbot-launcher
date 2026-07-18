@@ -20,7 +20,7 @@ jobs:
 
             - run: npm ci
             - run: npm test
-            - run: npm run release
+            - run: npm run release -- --publish never
 
             - name: Get version from package.json
               id: version
