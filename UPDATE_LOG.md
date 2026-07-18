@@ -6,6 +6,7 @@ Follow `UPDATE_LOG_POLICY.md` before adding entries.
 
 | Date | Area | Repo | Commit | Summary |
 | --- | --- | --- | --- | --- |
+| 2026-07-18 | CupidBot | cupidbot | 4b9b6cb | Port the latest Microbot walker, client, and July game-content updates into CupidBot. |
 | 2026-07-02 | CupidBot | cupidbot | f6f29ae | Port Microbot hiscore Maggot King and tile-indicator cutscene fixes into CupidBot. |
 | 2026-07-02 | CupidBot | cupidbot | 45106bb | Port Microbot walker, shortest-path, and ground-item fixes into CupidBot. |
 | 2026-07-01 | Launcher | cupidbot-launcher | 95ce8d4 | Fix hamburger menu dropdown positioning near the window edge. |
