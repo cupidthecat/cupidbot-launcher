@@ -6,6 +6,7 @@ Follow `UPDATE_LOG_POLICY.md` before adding entries.
 
 | Date | Area | Repo | Commit | Summary |
 | --- | --- | --- | --- | --- |
+| 2026-07-18 | Plugin | cupidbot-plugins | 24417d2 | Add Karambwanji support to Auto Fishing with small-net fishing at the CKR lake. |
 | 2026-07-18 | CupidBot | cupidbot | 4b9b6cb | Port the latest Microbot walker, client, and July game-content updates into CupidBot. |
 | 2026-07-02 | CupidBot | cupidbot | f6f29ae | Port Microbot hiscore Maggot King and tile-indicator cutscene fixes into CupidBot. |
 | 2026-07-02 | CupidBot | cupidbot | 45106bb | Port Microbot walker, shortest-path, and ground-item fixes into CupidBot. |
