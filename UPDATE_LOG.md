@@ -6,6 +6,7 @@ Follow `UPDATE_LOG_POLICY.md` before adding entries.
 
 | Date | Area | Repo | Commit | Summary |
 | --- | --- | --- | --- | --- |
+| 2026-07-22 | CupidBot | cupidbot | dd83888 | Make Quest Helper dialogue, item interactions, restarts, and navigation more reliable. |
 | 2026-07-22 | CupidBot | cupidbot | b590ab0 | Keep Web Walker moving continuously when route segments hand off. |
 | 2026-07-18 | Plugin | cupidbot-plugins | 0b5b6c1 | Prevent fishing level-up prompts from blocking Auto Fishing bank walks. |
 | 2026-07-18 | Plugin | cupidbot-plugins | 24417d2 | Add Karambwanji support to Auto Fishing with small-net fishing at the CKR lake. |
